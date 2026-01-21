@@ -6,17 +6,17 @@
 =============================================================================*/
 #include <stddef.h> //for size_t
 
-//Part A - single thread memory allocator
-void* customMalloc(size_t size);
-void customFree(void* ptr);
-void* customCalloc(size_t nmemb, size_t size);
-void* customRealloc(void* ptr, size_t size);
+// Part A - single thread memory allocator
+void *customMalloc(size_t size);
+void customFree(void *ptr);
+void *customCalloc(size_t nmemb, size_t size);
+void *customRealloc(void *ptr, size_t size);
 
-//Part B - multi thread memory allocator
-void* customMTMalloc(size_t size);
-void customMTFree(void* ptr);
-void* customMTCalloc(size_t nmemb, size_t size);
-void* customMTRealloc(void* ptr, size_t size);
+// Part B - multi thread memory allocator
+void *customMTMalloc(size_t size);
+void customMTFree(void *ptr);
+void *customMTCalloc(size_t nmemb, size_t size);
+void *customMTRealloc(void *ptr, size_t size);
 
 // Part B - helper functions for multi thread memory allocator
 void heapCreate();
@@ -29,20 +29,20 @@ void heapKill();
 /*=============================================================================
 * defines
 =============================================================================*/
-#define SBRK_FAIL (void*)(-1)
+#define SBRK_FAIL (void *)(-1)
 #define ALIGN_TO_MULT_OF_4(x) (((((x) - 1) >> 2) << 2) + 4)
 
 /*=============================================================================
 * Block
 =============================================================================*/
+// suggestion for block usage - feel free to change this
 typedef struct Block {
-    size_t size;
-    bool is_free;
-    Block* next;
-    Block* prev;
+  size_t size;
+  bool is_free;
+  Block *next;
+  Block *prev;
 } Block;
 
-extern Block* block_list;
-
+extern Block *block_list;
 
 #endif // CUSTOM_ALLOCATOR
