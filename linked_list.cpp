@@ -28,12 +28,12 @@ Block* LinkedList::findFreeNode(size_t size) {
 
 void LinkedList::markAsUsed(Block* block) {
     if (block) {
-        node->is_free = false;
+        block->is_free = false;
     }
 }
 
 void LinkedList::markAsFree(Block* block) {
     if (block) {
-        node->is_free = true;
+        block->is_free = true;
     }
 }
