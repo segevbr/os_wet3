@@ -1,7 +1,7 @@
 #include "linked_list.h"
 
 void LinkedList::append(size_t size, bool is_free) {
-    Node* newNode = (Node*)malloc(sizeof(Node));
+    Block* newNode = (Block*)malloc(sizeof(Block));
     newNode->size = size;
     newNode->is_free = is_free;
     newNode->next = NULL;
@@ -15,8 +15,8 @@ void LinkedList::append(size_t size, bool is_free) {
     tail = newNode;
 }
 
-Node* LinkedList::findFreeNode(size_t size) {
-    Node* current = head;
+Block* LinkedList::findFreeNode(size_t size) {
+    Block* current = head;
     while (current) {
         if (current->is_free && current->size >= size) {
             return current;
@@ -26,14 +26,14 @@ Node* LinkedList::findFreeNode(size_t size) {
     return NULL; // No suitable node found
 }
 
-void LinkedList::markAsUsed(Node* node) {
-    if (node) {
+void LinkedList::markAsUsed(Block* block) {
+    if (block) {
         node->is_free = false;
     }
 }
 
-void LinkedList::markAsFree(Node* node) {
-    if (node) {
+void LinkedList::markAsFree(Block* block) {
+    if (block) {
         node->is_free = true;
     }
 }

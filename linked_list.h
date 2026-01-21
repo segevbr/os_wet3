@@ -5,17 +5,17 @@
 #include <stdbool.h> // for bool
 #include <stdlib.h> // for NULL
 
-typedef struct Node {
+typedef struct Block {
     size_t size;
     bool is_free;
-    Node* next;
-    Node* prev;
-} Node;
+    Block* next;
+    Block* prev;
+} Block;
 
 class LinkedList {
 public:
-    Node* head;
-    Node* tail;
+    Block* head;
+    Block* tail;
 
     LinkedList() : head(NULL), tail(NULL) {}
 
@@ -23,19 +23,19 @@ public:
     void append(size_t size, bool is_free);
 
     // Find a free node with at least the requested size
-    Node* findFreeNode(size_t size);
+    Block* findFreeNode(size_t size);
 
     // Mark a node as used
-    void markAsUsed(Node* node);
+    void markAsUsed(Block* node);
 
     // Mark a node as free
-    void markAsFree(Node* node);
+    void markAsFree(Block* node);
 
     // Destructor to free all nodes
     ~LinkedList() {
-        Node* current = head;
+        Block* current = head;
         while (current) {
-            Node* nextNode = current->next;
+            Block* nextNode = current->next;
             free(current);
             current = nextNode;
         }
