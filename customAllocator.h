@@ -35,13 +35,14 @@ void heapKill();
 /*=============================================================================
 * Block
 =============================================================================*/
-//suggestion for block usage - feel free to change this
-typedef struct Block
-{
+typedef struct Block {
     size_t size;
-    struct Block* next;
-    bool free;
+    bool is_free;
+    Block* next;
+    Block* prev;
 } Block;
-extern Block* blockList;
+
+extern Block* block_list;
+
 
 #endif // CUSTOM_ALLOCATOR
