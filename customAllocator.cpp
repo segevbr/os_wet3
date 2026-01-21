@@ -1,4 +1,5 @@
 #include "customAllocator.h"
+#include <cstring>
 #include <errno.h>
 #include <iostream>
 #include <unistd.h>
@@ -227,4 +228,14 @@ void tryCoalesce(Block *&block) {
       block_to_coalesce->next->prev = block;
     }
   }
+}
+
+void *customCalloc(size_t nmemb, size_t size) {
+
+  size_t size_of_allocation = nmemb * size;
+  void *ptr = customMalloc(size_of_allocation);
+  if (ptr != nullptr) {
+    memset(ptr, 0, size_of_allocation);
+  }
+  return ptr;
 }
