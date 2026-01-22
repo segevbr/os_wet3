@@ -17,7 +17,9 @@ bool is_pointer_in_heap(void *ptr);
 void shrinking_block_split(Block *block, size_t new_size);
 
 // Helper functions for multi thread memory allocator
-void heapCreate() { initial_break = sbrk(0); }
+void heapCreate() { 
+  if (initial_break == nullptr) initial_break = sbrk(0);
+}
 
 void heapKill() {
   if (initial_break != nullptr) {
@@ -335,4 +337,243 @@ void shrinking_block_split(Block *block, size_t new_size) {
     remainder->is_free = true;
     customFree((void *)((char *)remainder + sizeof(Block)));
   }
+}
+
+// ---- Part B ----
+MemArea* area_head = nullptr;
+MemArea* current_area = nullptr;
+static void* mt_initial_break = nullptr;
+pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void heapMTCreate() {
+    if (mt_initial_break == nullptr) mt_initial_break = sbrk(0);
+
+    MemArea* last_area = nullptr;
+
+    for (int i = 0; i < NUM_AREAS; i++) {
+        // allocate memory for MemArea struct
+        MemArea* new_area = (MemArea*)sbrk(sizeof(MemArea));
+        
+        // allocate memory for area
+        size_t size = AREA_SIZE;
+        void* buffer = sbrk(size);
+
+        pthread_mutex_init(&new_area->area_lock, nullptr);
+
+        // init first block in area
+        Block* first_block = (Block*)buffer;
+        first_block->size = size - sizeof(Block);
+        first_block->is_free = true;
+        first_block->next = nullptr;
+        first_block->prev = nullptr;
+        first_block->lock = &new_area->area_lock;
+
+        new_area->rr_block_list = first_block;
+        new_area->next = nullptr;
+
+        // link areas
+        if (area_head == nullptr) {
+            area_head = new_area;
+            current_area = new_area;
+        } else {
+            last_area->next = new_area;
+        }
+        last_area = new_area;
+    }
+}
+
+void heapMTKill() {
+    if (area_head == nullptr) return;
+
+    MemArea* iter = area_head;
+    while (iter != nullptr) {
+        pthread_mutex_destroy(&iter->area_lock);
+        iter = iter->next;
+    }
+
+    area_head = nullptr;
+    current_area = nullptr;
+    if (mt_initial_break != nullptr) {
+        brk(mt_initial_break);
+        mt_initial_break = nullptr;
+    }
+}
+
+void *customMTMalloc(size_t size) {
+    if (size == 0) return nullptr;
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+    
+    // check if size is larger than area size - block size
+    if (aligned_size > AREA_SIZE - sizeof(Block)) return nullptr;
+
+    // RR loop
+    MemArea* start_area = current_area;
+    MemArea* iter = start_area;
+
+    do {
+        // Lock current area
+        pthread_mutex_lock(&iter->area_lock);
+
+        // search for best fit
+        Block* best_fit = find_best_fit(size, iter->rr_block_list);
+
+        if (best_fit != nullptr) {
+            // found a free block
+            
+            // if we can split the block - do it
+            if (best_fit-> size >= aligned_size + sizeof(Block) + 4) {
+                splitBlock(best_fit, aligned_size);
+
+                // updatre the lock for the new block
+                if (best_fit->next != nullptr) {
+                    best_fit->next->lock = &iter->area_lock;
+                }
+            }
+
+            best_fit->is_free = false;
+            best_fit->lock = &iter->area_lock;
+            pthread_mutex_unlock(&iter->area_lock);
+
+            // advance the current area pointer
+            current_area = (iter->next != nullptr) ? iter->next : area_head;
+            return (void *)((char *)best_fit + sizeof(Block));
+        }
+        // block wasn't found in the current area
+        pthread_mutex_unlock(&iter->area_lock);
+        iter = (iter->next != nullptr) ? iter->next : area_head;
+
+    } while (iter != start_area); 
+
+    
+    // block wasn't found, need to allocate a new area
+    pthread_mutex_lock(&global_lock);
+    MemArea* new_area = (MemArea*)sbrk(sizeof(MemArea));
+    void* buffer = sbrk(AREA_SIZE);
+
+    pthread_mutex_init(&new_area->area_lock, nullptr);
+
+    Block* blk = (Block*)buffer;
+    blk->size = AREA_SIZE - sizeof(Block);
+    blk->is_free = true;
+    blk->next = nullptr;
+    blk->prev = nullptr;
+    blk->lock = &new_area->area_lock;
+
+    new_area->rr_block_list = blk;
+    new_area->next = nullptr;
+
+    // link to the end of the area list
+    MemArea* tmp = area_head;
+    while (tmp->next != nullptr) tmp = tmp->next;
+    tmp->next = new_area;
+
+    pthread_mutex_unlock(&global_lock);
+
+    // now we can allocate from the new area
+    pthread_mutex_lock(&new_area->area_lock);
+    Block* final_res = find_best_fit(size, new_area->rr_block_list);
+
+    if (final_res != nullptr) {
+        
+        if (final_res->size >= aligned_size + sizeof(Block) + 4) {
+            splitBlock(final_res, aligned_size);
+            final_res->next->lock = &new_area->area_lock;
+        }
+
+        final_res->is_free = false;
+        final_res->lock = &new_area->area_lock;
+        pthread_mutex_unlock(&new_area->area_lock);
+        return (void *)((char*)final_res + sizeof(Block));
+    }
+    return nullptr; // shouldn't reach here (fail-safe)
+}
+
+void customMTFree(void *ptr) {
+    if (ptr == nullptr) return;
+
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
+
+    // check for lock
+    if (block->lock != nullptr) pthread_mutex_lock(block->lock);
+    block->is_free = true;
+
+    // try to coalesce
+    tryCoalesce(block);
+
+    if (block->lock != nullptr) pthread_mutex_unlock(block->lock);
+}
+
+void *customMTCalloc(size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    void* ptr = customMTMalloc(total_size);
+    if (ptr != nullptr) {
+      memset(ptr, 0, total_size);
+    }
+    return ptr;
+}
+
+// helper function for realloc, called when locks are held
+void shrinking_block_split_mt(Block *block, size_t new_size) {
+    if (block->size >= new_size + sizeof(Block) + 4) {
+      splitBlock(block, new_size);
+      Block *remainder = block->next;
+
+      remainder->lock = block->lock;
+      remainder->is_free = true;
+      tryCoalesce(remainder);
+    }
+}
+
+void *customMTRealloc(void *ptr, size_t size) {
+    if (ptr == nullptr) return customMTMalloc(size);
+    if (size == 0) {
+        customMTFree(ptr);
+        return nullptr;
+    }
+
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
+    size_t new_aligned_size = ALIGN_TO_MULT_OF_4(size);
+    
+    if (block->lock) pthread_mutex_lock(block->lock);
+
+    size_t old_size = block->size;
+
+    // in case of shrinking or same size
+    if (new_aligned_size <= old_size) {
+        shrinking_block_split_mt(block, new_aligned_size);
+        if (block->lock) pthread_mutex_unlock(block->lock);
+        return ptr;
+    }
+
+    // expanding in place
+    if (block->next != nullptr && block->next->is_free &&
+        (block->size + sizeof(Block) + block->next->size) >= new_aligned_size) {
+        
+        Block *next_block = block->next;
+        size_t combined_size = block->size + sizeof(Block) + next_block->size;
+
+        // "merge free blocks"
+        block->size = combined_size;
+        block->next = next_block->next;
+        if (next_block->next != nullptr){
+          next_block->next->prev = block;
+        }
+
+        shrinking_block_split_mt(block, new_aligned_size);
+
+        if (block->lock) pthread_mutex_unlock(block->lock);
+        return ptr;
+    }
+
+    // expand by moving 
+    if (block->lock) pthread_mutex_unlock(block->lock);
+    
+    void* new_ptr = customMTMalloc(size);
+    if (new_ptr == nullptr) return nullptr; // allocation failed
+
+    // copy old data
+    memcpy(new_ptr, ptr, old_size);
+    customMTFree(ptr);
+
+    return new_ptr;
 }

@@ -5,6 +5,7 @@
 * do no edit lines below!
 =============================================================================*/
 #include <stddef.h> //for size_t
+#include <pthread.h>
 
 // Part A - single thread memory allocator
 void *customMalloc(size_t size);
@@ -32,7 +33,8 @@ void heapKill();
 =============================================================================*/
 #define SBRK_FAIL (void *)(-1)
 #define ALIGN_TO_MULT_OF_4(x) (((((x) - 1) >> 2) << 2) + 4)
-
+#define NUM_AREAS 8
+#define AREA_SIZE 4096 
 /*=============================================================================
 * Block
 =============================================================================*/
@@ -42,8 +44,18 @@ typedef struct Block {
   bool is_free;
   Block *next;
   Block *prev;
+  pthread_mutex_t* lock;
 } Block;
 
 extern Block *block_list;
+
+typedef struct MemArea {
+    Block* rr_block_list;
+    pthread_mutex_t area_lock;
+    MemArea* next;
+} MemArea;
+
+void heapMTCreate();
+void heapMTKill();
 
 #endif // CUSTOM_ALLOCATOR
