@@ -1,9 +1,17 @@
 #include <iostream>
-#include <cassert>
 #include <cstring>
 #include <unistd.h>
 #include <pthread.h>
 #include "customAllocator.h"
+
+#define MY_ASSERT(condition) \
+    do { \
+        if (!(condition)) { \
+            std::cerr << "FAILED: " << #condition << " at " \
+                      << __FILE__ << ":" << __LINE__ << std::endl; \
+            exit(1); \
+        } \
+    } while (0)
 
 // Helper macros for printing
 #define RUN_TEST(test) \
@@ -25,8 +33,8 @@ void* get_program_break() {
 void test_basic_allocation() {
     size_t size = 10;
     void* ptr = customMalloc(size);
-    assert(ptr != nullptr);
-    assert(is_aligned(ptr)); 
+    MY_ASSERT(ptr != nullptr);
+    MY_ASSERT(is_aligned(ptr)); 
     memset(ptr, 0xAA, size);
     customFree(ptr);
 }
@@ -35,17 +43,17 @@ void test_calloc() {
     size_t nmemb = 5;
     size_t size = sizeof(int);
     int* ptr = (int*)customCalloc(nmemb, size);
-    assert(ptr != nullptr);
-    assert(is_aligned(ptr));
+    MY_ASSERT(ptr != nullptr);
+    MY_ASSERT(is_aligned(ptr));
     for (size_t i = 0; i < nmemb; i++) {
-        assert(ptr[i] == 0);
+        MY_ASSERT(ptr[i] == 0);
     }
     customFree(ptr);
 }
 
 void test_split_and_reuse() {
     void* ptr1 = customMalloc(100); 
-    assert(ptr1 != nullptr);
+    MY_ASSERT(ptr1 != nullptr);
     customFree(ptr1);
     
     // Should reuse the freed block
@@ -63,9 +71,9 @@ void test_realloc_expansion_strict() {
     
     // Force expansion
     void* ptr2 = customRealloc(ptr1, 100);
-    assert(ptr2 != nullptr);
-    assert(ptr1 != ptr2); // Must move to new location
-    assert(((char*)ptr2)[0] == 0x1);
+    MY_ASSERT(ptr2 != nullptr);
+    MY_ASSERT(ptr1 != ptr2); // Must move to new location
+    MY_ASSERT(((char*)ptr2)[0] == 0x1);
     
     customFree(ptr2);
 }
@@ -83,13 +91,13 @@ void test_error_handling() {
 void test_reuse_block() {
     size_t size = 100;
     void* ptr1 = customMalloc(size);
-    assert(ptr1 != nullptr);
+    MY_ASSERT(ptr1 != nullptr);
     
     void* addr1 = ptr1;
     customFree(ptr1);
     
     void* ptr2 = customMalloc(size);
-    assert(ptr2 == addr1);
+    MY_ASSERT(ptr2 == addr1);
     
     customFree(ptr2);
 }
@@ -106,7 +114,7 @@ void test_coalescing_merge() {
     customFree(p2);
     
     void* p_big = customMalloc(250);
-    assert(p_big == p1);
+    MY_ASSERT(p_big == p1);
     
     customFree(p_big);
 }
@@ -117,16 +125,16 @@ void test_release_to_os() {
     
     size_t size = 4000;
     void* ptr = customMalloc(size);
-    assert(ptr != nullptr);
+    MY_ASSERT(ptr != nullptr);
     
     void* after_alloc_brk = get_program_break();
-    assert(after_alloc_brk > start_brk); 
+    MY_ASSERT(after_alloc_brk > start_brk); 
     
     customFree(ptr);
     
     void* end_brk = get_program_break();
-    assert(end_brk < after_alloc_brk);
-    assert(end_brk == start_brk); 
+    MY_ASSERT(end_brk < after_alloc_brk);
+    MY_ASSERT(end_brk == start_brk); 
 }
 
 
@@ -135,11 +143,11 @@ void test_realloc_split() {
     void* original_addr = ptr;
     
     ptr = customRealloc(ptr, 100);
-    assert(ptr == original_addr);
+    MY_ASSERT(ptr == original_addr);
     
     void* ptr2 = customMalloc(100);
     long diff = (char*)ptr2 - (char*)ptr;
-    assert(diff > 100 && diff < 200); 
+    MY_ASSERT(diff > 100 && diff < 200); 
     
     customFree(ptr);
     customFree(ptr2);
@@ -160,13 +168,13 @@ void* thread_task(void* arg) {
         
         void* ptr = customMTMalloc(size);
     
-        assert(ptr != nullptr);
+        MY_ASSERT(ptr != nullptr);
         
         memset(ptr, (int)id, size);
         
        
         char* char_ptr = (char*)ptr;
-        assert(char_ptr[0] == (char)id);
+        MY_ASSERT(char_ptr[0] == (char)id);
 
         customMTFree(ptr);
     }
@@ -183,7 +191,7 @@ void test_multithreading_stress_pthread() {
     for (long i = 0; i < NUM_THREADS; ++i) {
         
         int result = pthread_create(&threads[i], nullptr, thread_task, (void*)i);
-        assert(result == 0); 
+        MY_ASSERT(result == 0); 
     }
 
     
@@ -237,7 +245,7 @@ void test_mt_contention() {
     
     for (int i = 0; i < NUM_THREADS; ++i) {
         pthread_join(threads[i], nullptr);
-        assert(tdata[i].success == true); 
+        MY_ASSERT(tdata[i].success == true); 
     }
     
     heapMTKill();

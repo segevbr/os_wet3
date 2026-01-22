@@ -2,7 +2,7 @@
 CXX = g++
 # Strict compilation flags as required by the PDF (Source 192, 194)
 # NOTE: -DNDEBUG disables assert(). For debugging your tests, remove -DNDEBUG temporarily.
-CXXFLAGS = -std=c++11 -Wall -Werror -pedantic-errors -pthread
+CXXFLAGS = -std=c++11 -Wall -Werror -pedantic-errors -DNDEBUG -pthread
 LDFLAGS = -pthread
 
 # Targets
