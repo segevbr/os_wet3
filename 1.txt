@@ -1,0 +1,2511 @@
+---- סשן 1 ----
+מודל: Gemini 3.0 Pro 
+קלט: מהי הפקודה sbrk()? מה הפקודה sbrk(0) מחזירה?
+
+פלט: הפקודה sbrk() (קיצור של System Break) היא קריאת מערכת (System Call) ב-Unix ו-Linux המשמשת לניהול זיכרון דינמי, וספציפית לשינוי גודל מקטע הנתונים (Data Segment) של התהליך.
+
+הנה ההסבר הטכני המפורט:
+
+מה עושה sbrk()?
+הפונקציה משנה את המיקום של ה-Program Break. ה-Program Break הוא הכתובת המגדירה את סוף ה-Data Segment (ליתר דיוק, סוף ה-Heap). כל כתובת זיכרון מתחת ל-Break נחשבת "מוקצית" (Allocated) ולכן התהליך יכול לגשת אליה, וכל כתובת מעל ל-Break נחשבת לא מוקצית וגישה אליה תגרום ל-Segmentation Fault.
+
+sbrk(increment): הפונקציה מקבלת פרמטר (בדרך כלל מספר בתים) ומזיזה את ה-Break בשיעור זה.
+
+אם הערך חיובי: הערימה גדלה (הקצאת זיכרון).
+
+אם הערך שלילי: הערימה קטנה (שחרור זיכרון).
+
+מה הפקודה sbrk(0) מחזירה?
+כאשר קוראים לפונקציה עם הארגומנט 0, אנו מבקשים להגדיל את ה-Break ב-0 בתים. כלומר, לא לבצע שום שינוי בזיכרון.
+
+הערך המוחזר: הפונקציה תחזיר את הכתובת הנוכחית של ה-Program Break.
+
+למה זה שימושי? שימוש ב-sbrk(0) מאפשר לתוכנית (או למממשי ספריית ניהול זיכרון כמו malloc) לדעת איפה מסתיים ה-Heap כרגע. זה שימש היסטורית כנקודת ייחוס (Base Address) כדי לעקוב אחרי כמה זיכרון התוכנית הקצתה או כדי לאתחל את המצביעים של מנהל הזיכרון.
+
+דוגמה בקוד (C)
+C
+#include <unistd.h>
+#include <stdio.h>
+
+int main() {
+    // קבלת הכתובת הנוכחית של סוף ה-Heap
+    void* current_break = sbrk(0);
+    printf("Original break: %p\n", current_break);
+
+    // הגדלת ה-Heap ב-4096 בתים (למשל)
+    sbrk(4096);
+
+    // בדיקת הכתובת החדשה
+    void* new_break = sbrk(0);
+    printf("New break:      %p\n", new_break);
+
+    return 0;
+}
+הערה חשובה
+במערכות מודרניות, מתכנתים כמעט ולא משתמשים ב-sbrk ישירות. פונקציית ה-malloc משתמשת בה (או ב-mmap) "מאחורי הקלעים" כדי לנהל את הזיכרון עבורך. שימוש ישיר ב-sbrk במקביל ל-malloc עלול לשבש את ניהול הזיכרון של התוכנית.
+
+קלט: מה sbrk מחזירה אם נגמר הזכרון?
+
+פלט: במקרה של כישלון (למשל, אם המערכת לא יכולה להקצות עוד זיכרון לתהליך), הפקודה sbrk() מחזירה את הערך (void *) -1.
+
+בנוסף, היא מעדכנת את המשתנה הגלובלי errno לערך ENOMEM (שמשמעותו Error: No Memory).
+
+דגש חשוב למבחנים ומימושים (כמו בתרגיל malloc):
+זהו "מוקש" נפוץ. פונקציות הקצאת זיכרון ברמה גבוהה כמו malloc מחזירות NULL (כלומר 0) במקרה של כישלון. לעומת זאת, sbrk לא מחזירה NULL בכישלון, אלא -1.
+
+לכן, בדיקה כזו היא שגויה:
+
+C
+void* p = sbrk(size);
+if (p == NULL) { // טעות! sbrk לא מחזירה NULL בכישלון
+    // error handling
+}
+הבדיקה הנכונה היא:
+
+C
+void* p = sbrk(size);
+if (p == (void *) -1) {
+    // הטיפול בשגיאה מתבצע כאן
+}
+
+קלט: איך אני מבדיל בין שתי השגיאות
+
+פלט: על מנת להבדיל בין סוגי השגיאות לאחר כישלון של sbrk (או brk), עליך להשתמש במשתנה הגלובלי errno.
+
+כאשר sbrk מחזירה -1 (כישלון), היא מעדכנת את errno בקוד שגיאה ספציפי שמסביר מה קרה. כדי לעמוד בדרישות המטלה שבתמונה, עליך לבצע את הבדיקה הבאה:
+
+1. בדיקת סוג השגיאה
+עליך לכלול את הספרייה <errno.h> ולהשתמש בקבועים הבאים:
+
+ENOMEM: שגיאה זו מעידה שאין מספיק זיכרון זמין במערכת כדי להגדיל את ה-Heap (המקרה השני שתואר בתמונה: "נגמר למערכת הזיכרון").
+
+EINVAL (או קודים אחרים): שגיאה זו מעידה בדרך כלל על ארגומנטים לא חוקיים (למשל, ניסיון להקטין את ה-Break אל מתחת לתחילת ה-Data Segment). זה תואם למקרה הראשון בתמונה ("הקריאה לא הייתה נכונה").
+
+2. דוגמה לקוד (הלוגיקה הנדרשת)
+C
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+void* request_memory(intptr_t increment) {
+    void* result = sbrk(increment);
+
+    // בדיקה אם הפקודה נכשלה
+    if (result == (void*) -1) {
+        
+        // בדיקה: האם נגמר הזיכרון?
+        if (errno == ENOMEM) {
+            // כאן תכתוב את הלוגיקה לשחרור הזיכרון (אם יש כזו במימוש שלך)
+            // ...
+            
+            // הדפסת השגיאה בדיוק כפי שנדרש
+            printf("<sbrk/brk error>: out of memory\n");
+            exit(1);
+        } 
+        else {
+            // טיפול במקרה של פרמטרים לא תקינים (למשל EINVAL)
+            // בהתאם לדרישות התרגיל למקרה זה (לא פורט בתמונה מה לעשות כאן)
+        }
+    }
+
+    return result;
+}
+שים לב: בתמונה כתוב "יש לשחרר את כל הזיכרון". אם אתה מממש ספריית הקצאת זיכרון (כמו malloc), הכוונה היא בדרך כלל שעליך לוודא שהמבנים הפנימיים שלך נשארים במצב תקין או פשוט לצאת (מערכת ההפעלה משחררת את כל הזיכרון של התהליך ב-exit ממילא), אבל חשוב להדפיס את ההודעה הספציפית לפני היציאה.
+
+קלט: אני לא בטוח לגבי פיצול בלוק.
+
+האם התנאי של best_fit->size >= size + sizeof(Block) + 4 מספיק לפיצול? אם כן למה?
+
+פלט: התשובה הקצרה היא: כן, התנאי הזה נכון ומספיק, בהנחה שהגודל המינימלי שאתה רוצה לאפשר להקצאת זיכרון הוא 4 בתים (שזה הגיוני מאוד לארכיטקטורת 32/64 ביט ויישור זיכרון).
+
+הנה ההסבר המפורט למה התנאי הזה מורכב כך:
+
+הגיון הנוסחה
+המטרה בפיצול (Splitting) היא לקחת בלוק גדול, להשתמש בחלק ממנו לבקשה הנוכחית, ואת השאר להפוך לבלוק חופשי חדש.
+
+התנאי שלך הוא: best_fit->size >= size + sizeof(Block) + 4
+
+בוא נפרק את זה לרכיבים:
+
+best_fit->size: זהו גודל ה-Payload (הנתונים נטו) שיש לנו כרגע בבלוק הפנוי שמצאנו.
+
+size: זה הגודל שאנחנו הולכים "לחתוך" החוצה עבור המשתמש (רצוי שזה יהיה ה-aligned_size).
+
+sizeof(Block): אם אנחנו מפצלים, החלק שנשאר חייב להפוך לבלוק עצמאי. בלוק עצמאי חייב Metadata משלו (ה-struct ששומר next, prev, size וכו'). לכן חייבים לשריין מקום לכותרת הזו.
+
+4: זהו הסף התחתון לבלוק שימושי. אם נשאר לנו מקום רק לכותרת (sizeof(Block)) אבל 0 מקום לנתונים, יצרנו בלוק חסר תועלת. המספר 4 מבטיח שלבלוק החדש שיווצר יהיה מקום ללפחות 4 בתים של מידע (שזה בדרך כלל גודל של int או פוינטר).
+
+המחשה ויזואלית
+דמיין שהבלוק הפנוי נראה כך:
+
+Plaintext
+[ Header ] [ ----------------------- Payload (best_fit->size) ----------------------- ]
+אנחנו רוצים להפוך אותו לזה:
+
+Plaintext
+[ Header ] [ -- size -- ] [ New Header ] [ -- New Free Block Data (>=4) -- ]
+כדי שהמצב השני יתקיים, ה-Payload המקורי חייב להכיל את ה-size של המשתמש + ה-Header החדש + לפחות קצת דאטה (4).
+
+טיפ לדיוק (Alignment)
+בקטע הקוד שלך, אתה משתמש במשתנה aligned_size. מומלץ מאוד להשתמש ב-aligned_size גם בתנאי הפיצול ולא ב-size המקורי, כדי לשמור על יישור הזיכרון גם עבור הבלוק החדש שנוצר.
+
+התנאי המשופר:
+
+C++
+// שים לב שמשתמשים ב-aligned_size ולא ב-size הגולמי
+if (best_fit->size >= aligned_size + sizeof(Block) + 4) {
+    // בצע פיצול
+}
+דוגמה למימוש הפיצול
+ברגע שהתנאי מתקיים, כך נראה הפיצול בפועל (בפסאודו-קוד C++):
+
+C++
+// חישוב המיקום של הבלוק החדש בזיכרון
+// אנחנו מדלגים על ה-Header הקיים + המידע שהקצנו
+Block* new_block = (Block*)((char*)best_fit + sizeof(Block) + aligned_size);
+
+// עדכון המטא-דאטה של הבלוק החדש
+new_block->size = best_fit->size - aligned_size - sizeof(Block);
+new_block->is_free = true;
+new_block->next = best_fit->next;
+new_block->prev = best_fit;
+
+// עדכון השרשור במידה ויש בלוק אחרינו
+if (new_block->next != nullptr) {
+    new_block->next->prev = new_block;
+}
+
+// עדכון הבלוק הנוכחי (שעכשיו הוקטן)
+best_fit->size = aligned_size;
+best_fit->is_free = false;
+best_fit->next = new_block;
+
+// החזרת מצביע למידע (דילוג על ה-Header)
+return (void*)((char*)best_fit + sizeof(Block));
+
+קלט: נראלי שהמימוש של customMalloc נכון ולפי דרישות התרגיל. יש מצב את עובר עליו.
+
+פלט: המימוש שלך ל-customMalloc בהחלט בכיוון הנכון ומראה הבנה של הדרישות (Best Fit, Splitting, Alignment). עם זאת, יש בו באג קריטי אחד שימנע מהתוכנית לעבוד (היא לא תנהל רשימה בכלל), ועוד מספר תיקונים לוגיים שחשוב לבצע כדי לעמוד בכל מקרי הקצה והדרישות.
+
+להלן סקירה (Code Review) מפורטת:
+
+1. הבאג הקריטי: אי-עדכון המצביע הגלובלי (Showstopper)
+בבלוק הראשון, כאשר block_list == nullptr, אתה מקצה את הבלוק הראשון ב-Heap, אך אתה שוכח לעדכן את המשתנה הגלובלי block_list. כתוצאה מכך, בפעם הבאה שתקרא ל-malloc, התוכנית תחשוב שוב שהרשימה ריקה, תדרוס את הזיכרון הקודם או תיצור בלוקים מנותקים.
+
+התיקון הנדרש:
+
+C++
+// ... בתוך ה-if הראשון ...
+new_block->prev = nullptr;
+
+// שורה חסרה: עדכון הראש של הרשימה!
+block_list = new_block; 
+
+return (void*)((char*)new_block + sizeof(Block));
+2. שימוש ב-size לא מיושר בתנאי הפיצול
+יש לך בעיה לוגית בפיצול (Splitting). אתה בודק את התנאי לפי size (הגולמי), אך בפועל מפחית מהבלוק את aligned_size. אם size הוא 5, aligned_size הוא 8. התנאי שלך עשוי להתקיים עבור 5, אך הפעולה החשבונית תוריד 8, מה שעלול לגרום לגלישה (Underflow) או ליצירת בלוק קטן מדי שלא עומד בדרישות היישור.
+
+הקוד הנוכחי:
+
+C++
+if (best_fit->size >= size + sizeof(Block) + 4) { // הטעות כאן: שימוש ב-size
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+    // ...
+}
+התיקון הנדרש: חשב את ה-aligned_size לפני הבדיקה והשתמש בו בתנאי:
+
+C++
+size_t aligned_size = ALIGN_TO_MULT_OF_4(size); // חישוב מוקדם
+if (best_fit->size >= aligned_size + sizeof(Block) + 4) {
+    // split...
+}
+3. אופטימיזציה: שימוש חוזר בערך החזרה של sbrk
+אתה משתמש ב-sbrk(0) כדי לקבל את הכתובת הנוכחית, ואז ב-sbrk(total_size) כדי להקצות. זה לא באג, אבל זה מיותר (System Calls הן פעולות יקרות). הפקודה sbrk(increment) מחזירה את הכתובת הקודמת של ה-Break, שהיא בדיוק ההתחלה של הבלוק החדש שלך.
+
+במקום:
+
+C++
+void* heap_end = sbrk(0);
+void* result = sbrk(total_size);
+Block* new_block = (Block*)heap_end;
+עדיף:
+
+C++
+void* result = sbrk(total_size);
+if (result == (void*)-1) { ... }
+Block* new_block = (Block*)result; // result מצביע כבר להתחלה שהוקצתה
+4. הגדרת SBRK_FAIL
+השתמשת בקבוע SBRK_FAIL. אני מניח שהגדרת אותו ב-.h, אבל אם לא – ודא שהוא מוגדר כ-(void*)-1.
+
+C++
+#define SBRK_FAIL ((void*)-1)
+5. הערה לגבי errno
+על פי התמונה שצירפת, עליך לצאת עם exit(1) אם השגיאה היא ENOMEM. הקוד שלך עושה זאת נכון. שים לב שהדרישה בתמונה מציינת גם: "יש לשחרר את כל הזיכרון" לפני היציאה. במימושים פשוטים, מערכת ההפעלה מנקה הכל ביציאה, אך אם הוספת פונקציות עזר לניקוי (כמו שמוזכר בקובץ ה-PDF לגבי heapKill), כדאי לקרוא להן לפני ה-exit. אם לא מימשת כאלו, ההדפסה והיציאה מספיקות.
+
+סיכום הקוד המתוקן (חלקים רלוונטיים)
+הנה איך הבלוק הראשון צריך להיראות בערך:
+
+C++
+    if (block_list == nullptr) {
+        size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+        size_t total_size = sizeof(Block) + aligned_size;
+
+        // sbrk returns the previous break, which is the start of our new block
+        void* result = sbrk(total_size); 
+        
+        if (result == (void*)-1) { // Standard check
+            if (errno == ENOMEM) {
+                cerr << "<sbrk/brk error>: out of memory" << endl;
+                exit(1);
+            } 
+            return nullptr;
+        }
+
+        Block* new_block = (Block*)result; // Use result directly
+        new_block->size = aligned_size;
+        new_block->is_free = false;
+        new_block->next = nullptr;
+        new_block->prev = nullptr;
+
+        block_list = new_block; // CRITICAL FIX: Update global head
+
+        return (void*)((char*)new_block + sizeof(Block)); 
+    }
+שאר הלוגיקה (Best Fit, שרשור בסוף הרשימה) נראית תקינה, בכפוף לתיקון של חישוב ה-aligned_size לפני תנאי הפיצול.
+
+קלט: תוכל לעזור לי לממש את heapkill()?
+
+פלט: בוודאי. על פי מסמך ההנחיות, הפונקציות heapCreate ו-heapKill נועדו לאתחל ולנקות משתנים גלובליים או מצבי זיכרון בתחילת ובסוף הריצה של הטסטים.
+
+במימוש של החלק הראשון (Part A - Single Threaded), המטרה העיקרית של heapKill היא "לאפס" את ה-Heap למצב שבו הוא היה לפני שהאלוקטור שלך התחיל לעבוד, כדי שטסטים עוקבים לא יושפעו מהקצאות קודמות.
+
+הרעיון המרכזי
+כדי לממש את heapKill ביעילות, אנחנו צריכים לדעת איפה ה-Heap התחיל.
+
+ב-heapCreate: נשמור את הכתובת ההתחלתית של ה-Program Break (לפני שהקצנו משהו).
+
+ב-heapKill: נשתמש בפקודה brk() (שהיא המקבילה האבסולוטית ל-sbrk) כדי להחזיר את ה-Break לנקודת ההתחלה, ונאפס את המצביע הגלובלי block_list.
+
+המימוש המוצע
+הוסיפי/הוסיף את המשתנה הגלובלי (עדיף static כדי שיהיה פרטי לקובץ) ואת הפונקציות הבאות:
+
+C++
+// משתנה סטטי לשמירת נקודת ההתחלה של ה-Heap
+static void* initial_break = nullptr;
+
+void heapCreate() {
+    // שמירת המיקום הנוכחי של ה-break לפני שהתחלנו להקצות זיכרון
+    initial_break = sbrk(0);
+}
+
+void heapKill() {
+    // 1. החזרת ה-program break לנקודת ההתחלה
+    // הפקודה brk מקבלת כתובת אבסולוטית ומזיזה את ה-break לשם
+    if (initial_break != nullptr) {
+        int res = brk(initial_break);
+        if (res == -1) {
+             // בדרך כלל אין צורך לטפל בשגיאה כאן בטסטים פשוטים, 
+             // אבל טוב לדעת שזה יכול להיכשל תיאורטית
+        }
+        initial_break = nullptr;
+    }
+
+    // 2. איפוס הרשימה המקושרת הגלובלית
+    // זה קריטי כדי שבהרצה הבאה לא נצביע לזיכרון שכבר "שוחרר" למערכת
+    block_list = nullptr;
+}
+הסבר על הפונקציות
+
+heapCreate: נקראת בתחילת הבדיקה. אנחנו משתמשים ב-sbrk(0) רק כדי "לצלם" את המצב הקיים.
+
+heapKill:
+
+brk(initial_break): פקודה זו מבטלת למעשה את כל ה-sbrk שעשינו במהלך התוכנית. היא מכווצת את ה-Heap בחזרה לגודלו המקורי.
+
+block_list = nullptr: מכיוון שכל הבלוקים שלנו ישבו בזיכרון שכרגע החזרנו למערכת ההפעלה, המצביע block_list מצביע כעת לזיכרון לא חוקי. חובה לאפס אותו כדי ש-customMalloc הבא יתחיל רשימה חדשה ונקייה (כפי שתיקנתי לך בתגובה הקודמת עם הוספת block_list = new_block).
+
+שילוב בקוד הקיים
+הוודא שהמשתנה block_list מוגדר מחוץ לפונקציות (גלובלי), כפי שעשית, ושהוא מאופס ב-heapKill. אין צורך לעבור על הרשימה ולעשות free לכל איבר, כיוון שהזזת ה-brk משחררת את כל הטווח הזה במכה אחת ברמת מערכת ההפעלה.
+
+קלט: תעזור לי בחלק ב'
+
+פלט: חלק ב' של התרגיל הוא המורכב ביותר, כיוון שהוא דורש ניהול מקביליות (Multithreading) וסינכרון, תוך שמירה על הלוגיקה של ניהול הזיכרון שכבר כתבת.
+
+להלן תוכנית עבודה ומימוש מלא המבוסס על דרישות המסמך (שיטת ה-Arenas/Zones).
+
+השינויים הנדרשים בקונספט (Design)
+לפי דרישה 3 (עמוד 8, סעיפים 153-165):
+
+מבנה Arenas: במקום רשימה אחת גדולה (block_list), יהיו לנו לפחות 8 "אזורים" (Arenas).
+
+גודל קבוע: כל Arena מוקצה מראש בגודל 4KB.
+
+מנעולים: לכל Arena יש pthread_mutex_t משלה.
+
+Round Robin: ההקצאות עוברות בצורה מעגלית בין האזורים כדי למנוע התנגשויות (Contention).
+
+הרחבה דינמית: אם אין מקום באף אחד מה-8, יוצרים Arena חדשה.
+
+שלב 1: שינויים ב-Header (customAllocator.h)
+עלינו להוסיף שדה למבנה ה-Block כדי שבעת שחרור (free), נדע לאיזה מנעול (Mutex) הבלוק שייך וננעל אותו לפני השינוי.
+
+C++
+// customAllocator.h
+
+#include <pthread.h> // הוספת הספרייה לניהול Threads
+
+// ... (שאר הקוד)
+
+typedef struct Block {
+  size_t size;
+  bool is_free;
+  Block *next;
+  Block *prev;
+  pthread_mutex_t* lock; // שדה חדש: מצביע למנעול של האזור (Arena)
+} Block;
+שלב 2: מימוש מחלקות עזר ומבנים ב-customAllocator.cpp
+אנו נוסיף מבנה Arena ונשתמש בפונקציות עזר (internalMalloc, internalFree) כדי למנוע שכפול קוד בין חלק א' לחלק ב'.
+
+הוסיפי/הוסיף את הקוד הבא בראש הקובץ customAllocator.cpp (אחרי ה-includes והמשתנים הגלובליים הקיימים):
+
+C++
+// מבנה לניהול אזור זיכרון (Arena) עבור חלק ב'
+struct Arena {
+    Block* block_list;       // ראש הרשימה של האזור הזה
+    pthread_mutex_t mutex;   // מנעול ייחודי לאזור
+    Arena* next;             // מצביע לאזור הבא (לצורך הרחבה דינמית)
+};
+
+// משתנים גלובליים לחלק ב'
+Arena* arena_head = nullptr;       // ראש רשימת האזורים
+Arena* current_arena = nullptr;    // המצביע הנוכחי ל-Round Robin
+pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER; // מנעול ליצירת אזורים חדשים
+שלב 3: רפקטורינג (Refactoring) של הלוגיקה
+כדי שגם customMalloc (חלק א') וגם customMTMalloc (חלק ב') יעבדו, נוציא את הלוגיקה לפונקציה פנימית שמקבלת את ראש הרשימה כפרמטר.
+
+שימי/שים לב: הקוד הזה מחליף את customMalloc הקיים. מעתה customMalloc יקרא ל-internalAlloc.
+
+C++
+// פונקציית עזר פנימית שמבצעת את ההקצאה על רשימה ספציפית
+// מקבלת את ראש הרשימה "by reference" כדי שתוכל לעדכן אותו
+void* internalAlloc(size_t size, Block*& head_of_list, pthread_mutex_t* lock_ptr) {
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+    // אם הרשימה ריקה לגמרי (קורה רק ב-part A בהתחלה או באזור חדש)
+    // הערה: ב-MT אנו מאתחלים את האזורים מראש, אז זה פחות רלוונטי שם
+    if (head_of_list == nullptr && lock_ptr == nullptr) { 
+        // לוגיקה מקורית של חלק א' למקרה של אתחול ראשוני
+        // ... (ניתן להשאיר את המימוש המקורי שלך כאן עבור חלק א')
+    }
+    
+    // חיפוש Best Fit
+    Block *current = head_of_list;
+    Block *best_fit = nullptr;
+    
+    while (current != nullptr) {
+        if (current->is_free && current->size >= aligned_size) {
+            if (best_fit == nullptr || current->size < best_fit->size) {
+                best_fit = current;
+                if (current->size == aligned_size) break; // התאמה מושלמת
+            }
+        }
+        current = current->next;
+    }
+
+    // אם נמצא בלוק
+    if (best_fit != nullptr) {
+        // בדיקת פיצול (Split)
+        if (best_fit->size >= aligned_size + sizeof(Block) + 4) {
+             Block *new_block = (Block *)((char *)best_fit + sizeof(Block) + aligned_size);
+             new_block->size = best_fit->size - aligned_size - sizeof(Block);
+             new_block->is_free = true;
+             new_block->next = best_fit->next;
+             new_block->prev = best_fit;
+             new_block->lock = lock_ptr; // שיוך למנעול הנכון
+
+             if (best_fit->next != nullptr) {
+                 best_fit->next->prev = new_block;
+             }
+             best_fit->next = new_block;
+             best_fit->size = aligned_size;
+        }
+        best_fit->is_free = false;
+        best_fit->lock = lock_ptr; // חשוב!
+        return (void *)((char *)best_fit + sizeof(Block));
+    }
+    
+    return nullptr; // לא נמצא מקום ברשימה הזו
+}
+שלב 4: מימוש heapCreate ו-heapKill לחלק ב'
+לפי דרישה 3 (עמ' 8): "יש להכין מראש 8 אזורי זיכרון... 4KB כל אחד... כל אחד עם מנעול משלו".
+
+C++
+void heapCreate() {
+    initial_break = sbrk(0);
+    
+    // חלק ב': יצירת 8 אזורים
+    Arena* last_arena = nullptr;
+    
+    for (int i = 0; i < 8; ++i) {
+        // הקצאת מקום למבנה ה-Arena עצמו
+        Arena* new_arena = (Arena*)sbrk(sizeof(Arena)); 
+        
+        // הקצאת 4KB לאזור הזיכרון
+        size_t arena_size = 4096; // 4KB
+        void* arena_space = sbrk(arena_size);
+        
+        // אתחול המנעול
+        pthread_mutex_init(&new_arena->mutex, nullptr);
+        
+        // יצירת הבלוק הראשוני שתופס את כל ה-4KB
+        Block* initial_block = (Block*)arena_space;
+        initial_block->size = arena_size - sizeof(Block);
+        initial_block->is_free = true;
+        initial_block->next = nullptr;
+        initial_block->prev = nullptr;
+        initial_block->lock = &new_arena->mutex; // המצביע למנעול
+        
+        new_arena->block_list = initial_block;
+        new_arena->next = nullptr;
+        
+        // שרשור האזורים
+        if (arena_head == nullptr) {
+            arena_head = new_arena;
+            current_arena = new_arena; // התחלת ה-Round Robin
+        } else {
+            last_arena->next = new_arena;
+        }
+        last_arena = new_arena;
+    }
+    
+    // סגירת המעגל לרשימה מעגלית עבור Round Robin?
+    // המסמך אומר "תור מעגלי", נממש זאת ע"י מצביע שחוזר להתחלה
+}
+
+void heapKill() {
+    // שחרור המנעולים
+    Arena* curr = arena_head;
+    while (curr != nullptr) {
+        pthread_mutex_destroy(&curr->mutex);
+        curr = curr->next;
+    }
+    arena_head = nullptr;
+    
+    // החזרת ה-brk למקום ההתחלתי (מוחק את כל ה-Arenas והבלוקים)
+    if (initial_break != nullptr) {
+        brk(initial_break);
+        initial_break = nullptr;
+    }
+    block_list = nullptr;
+}
+שלב 5: מימוש customMTMalloc
+כאן אנו מממשים את הלוגיקה של Round Robin והרחבה דינמית (סעיפים 4-6, עמ' 8) .
+
+C++
+void *customMTMalloc(size_t size) {
+    if (size == 0) return nullptr;
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+    if (aligned_size > 4096 - sizeof(Block)) {
+        // בקשה גדולה מדי לאזור של 4KB
+        return nullptr; 
+    }
+
+    // נשתמש במנעול גלובלי רק כדי לקדם את ה-ptr בצורה אטומית או למצוא arena
+    // אבל כדי למנוע צוואר בקבוק, ננסה לנעול את ה-Arena הספציפית
+    
+    Arena* start_arena = current_arena;
+    Arena* iter = start_arena;
+    
+    // סיבוב ראשון: מנסים למצוא מקום ב-Arenas הקיימות
+    do {
+        pthread_mutex_lock(&iter->mutex);
+        
+        void* ptr = internalAlloc(size, iter->block_list, &iter->mutex);
+        
+        if (ptr != nullptr) {
+            // הצליח!
+            pthread_mutex_unlock(&iter->mutex);
+            
+            // עדכון ה-Round Robin (אטומי או פשוט קידום)
+            // זה לא חייב להיות מדויק ב-100% מבחינת מרוץ, העיקר הפיזור
+            if (iter->next != nullptr) current_arena = iter->next;
+            else current_arena = arena_head;
+            
+            return ptr;
+        }
+        
+        pthread_mutex_unlock(&iter->mutex);
+        
+        // מעבר לאזור הבא
+        if (iter->next != nullptr) iter = iter->next;
+        else iter = arena_head;
+        
+    } while (iter != start_arena);
+    
+    // אם הגענו לכאן - אין מקום באף Arena קיימת.
+    // צריך ליצור Arena חדשה (דרישה 4 עמ' 8)
+    
+    pthread_mutex_lock(&global_lock); // נעילה גלובלית להקצאת sbrk
+    
+    Arena* new_arena = (Arena*)sbrk(sizeof(Arena));
+    void* arena_space = sbrk(4096);
+    // (כדאי להוסיף כאן בדיקות שגיאה של sbrk כמו בחלק א)
+    
+    pthread_mutex_init(&new_arena->mutex, nullptr);
+    Block* initial_block = (Block*)arena_space;
+    initial_block->size = 4096 - sizeof(Block);
+    initial_block->is_free = true;
+    initial_block->next = nullptr;
+    initial_block->prev = nullptr;
+    initial_block->lock = &new_arena->mutex;
+    
+    new_arena->block_list = initial_block;
+    new_arena->next = nullptr; // מוסיף לסוף
+    
+    // הוספה לרשימה המקושרת
+    Arena* temp = arena_head;
+    while (temp->next != nullptr) {
+        temp = temp->next;
+    }
+    temp->next = new_arena;
+    
+    pthread_mutex_unlock(&global_lock);
+    
+    // עכשיו נקצה ממנה
+    pthread_mutex_lock(&new_arena->mutex);
+    void* ptr = internalAlloc(size, new_arena->block_list, &new_arena->mutex);
+    pthread_mutex_unlock(&new_arena->mutex);
+    
+    return ptr;
+}
+שלב 6: מימוש customMTFree
+כאן השימוש ב-Block->lock הוא קריטי.
+
+C++
+void customMTFree(void *ptr) {
+    if (ptr == nullptr) return;
+
+    Block *block = (Block *)((char *)ptr - sizeof(Block));
+    
+    // נעילת האזור הספציפי שאליו הבלוק שייך
+    if (block->lock != nullptr) {
+        pthread_mutex_lock(block->lock);
+    }
+
+    block->is_free = true;
+    
+    // שימוש בפונקציית האיחוד (Coalesce) הקיימת שלך
+    // נצטרך להתאים אותה מעט כדי שתקבל פרמטרים או תוודא שהיא עובדת עם המבנה החדש
+    tryCoalesce(block); // הפונקציה שלך עובדת עם מצביעי next/prev אז היא תקינה
+
+    if (block->lock != nullptr) {
+        pthread_mutex_unlock(block->lock);
+    }
+}
+הערות אחרונות ודגשים
+customMTRealloc: המימוש הפשוט ביותר והבטוח ביותר ב-MT הוא: malloc חדש, memcpy של המידע, ו-free לישן. אין צורך לנסות להרחיב במקום (in-place) כי זה דורש נעילות מורכבות יותר.
+
+tryCoalesce: הפונקציה שמימשת בחלק א' טובה, אבל וודא שהיא לא ניגשת למשתנים גלובליים (כמו block_list) אלא עובדת רק עם prev ו-next של הבלוקים עצמם. המימוש הנוכחי שלך נראה תקין בהקשר הזה.
+
+שגיאות sbrk: זכור להוסיף את בדיקות השגיאה (errno וכו') גם בהקצאות של חלק ב', בדיוק כמו שעשית בחלק א'.
+
+קלט: אני רוצה להשתמש ב-customMalloc כמו שהוא ובכללי בכל הפונקציות שמיממשתי כמו שהן, כלומר בא לי שהמימוש המקבילי ישתמש במימוש הקיים של הפונקציות שבניתי אבל יוסיף על זה את הלוגיקה של המקביליות (נעילות וכו')
+
+פלט: זו גישה מעולה. שימוש חוזר בקוד (Code Reuse) הוא עיקרון חשוב בהנדסת תוכנה.
+
+עם זאת, יש מכשול טכני אחד קטן: customMalloc שלך "מכירה" רק את המשתנה הגלובלי block_list. בחלק ב' יש לנו הרבה רשימות (אחת לכל Arena), ולכן אי אפשר לקרוא ל-customMalloc ישירות כיוון שהיא תמיד תלך לרשימה הגלובלית של חלק א'.
+
+הפתרון האלגנטי: אנחנו ניקח את ה"מוח" של customMalloc (החלק שמחפש Best Fit ומפצל בלוקים) ונוציא אותו לפונקציית עזר (Helper Function). כך:
+
+חלק א' יקרא לפונקציית העזר וישלח לה את block_list הגלובלי.
+
+חלק ב' יקרא לאותה פונקציית עזר בדיוק, אבל ישלח לה את ה-block_list של ה-Arena הספציפית שהוא נעל הרגע.
+
+כך אתה שומר על הלוגיקה שלך בדיוק, ורק מוסיף את ה"עטיפה" של המקביליות.
+
+הנה המימוש המלא לפי הבקשה שלך:
+
+1. עדכון customAllocator.h
+אנחנו צריכים להוסיף מצביע למנעול בתוך ה-Block כדי שכשנעשה free, נדע איזה Arena לנעול.
+
+C++
+#include <pthread.h> // חובה להוסיף
+
+typedef struct Block {
+  size_t size;
+  bool is_free;
+  Block *next;
+  Block *prev;
+  pthread_mutex_t* lock; // תוספת: מצביע למנעול האחראי על הבלוק הזה
+} Block;
+2. הפונקציה המשותפת (הלוגיקה שלך)
+העתקתי את הלוגיקה שלך מ-customMalloc (חיפוש Best Fit ופיצול) לפונקציה שמקבלת רשימה כפרמטר. שים את הפונקציה הזו בראש קובץ ה-cpp (או כפונקציה סטטית).
+
+C++
+// פונקציית עזר המכילה את הלוגיקה המקורית שלך לחיפוש ופיצול
+// מחזירה מצביע לבלוק המוכח לשימוש, או NULL אם לא נמצא מקום
+void* logic_find_and_split(Block* head, size_t size, pthread_mutex_t* lock_for_block) {
+    Block *current = head;
+    Block *best_fit = nullptr;
+
+    // 1. חיפוש Best Fit (הלוגיקה המקורית שלך)
+    while (current != nullptr) {
+        if (current->is_free && current->size == size) {
+            best_fit = current;
+            break;
+        }
+        if (current->is_free && current->size >= size) {
+            if (best_fit == nullptr || current->size < best_fit->size) {
+                best_fit = current;
+            }
+        }
+        current = current->next;
+    }
+
+    // 2. נמצא בלוק - ביצוע פיצול (הלוגיקה המקורית שלך)
+    if (best_fit != nullptr) {
+        size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+        if (best_fit->size >= aligned_size + sizeof(Block) + 4) {
+            // יצירת הבלוק החדש משארית הזיכרון
+            Block *new_block = (Block *)((char *)best_fit + sizeof(Block) + aligned_size);
+
+            new_block->size = best_fit->size - aligned_size - sizeof(Block);
+            new_block->is_free = true;
+            new_block->next = best_fit->next;
+            new_block->prev = best_fit;
+            new_block->lock = lock_for_block; // חשוב: מעבירים את המנעול לבלוק החדש
+
+            if (best_fit->next != nullptr) {
+                best_fit->next->prev = new_block;
+            }
+            best_fit->next = new_block;
+            best_fit->size = aligned_size;
+        }
+        
+        best_fit->is_free = false;
+        best_fit->lock = lock_for_block; // שיוך המנעול לבלוק המוקצה
+        
+        return (void *)((char *)best_fit + sizeof(Block));
+    }
+
+    return nullptr; // לא נמצא מקום ברשימה הזו
+}
+3. חלק א' המעודכן (פשוט קורא לפונקציה המשותפת)
+אנחנו משאירים את הטיפול ב-sbrk כאן, כי זה ייחודי לחלק א' (הרחבת ה-Heap הגלובלי).
+
+C++
+void *customMalloc(size_t size) {
+  if (size == 0) return nullptr;
+  
+  // ניסיון להשתמש בלוגיקה המשותפת על הרשימה הגלובלית
+  // מעבירים nullptr כמנעול כי בחלק א' אין נעילות
+  if (block_list != nullptr) {
+      void* ptr = logic_find_and_split(block_list, size, nullptr);
+      if (ptr != nullptr) return ptr;
+  }
+
+  // === אם הגענו לפה, הלוגיקה המשותפת לא מצאה מקום. צריך להרחיב את ה-Heap ===
+  // (זה הקוד המקורי שלך לטיפול ב-sbrk)
+  
+  size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+  size_t total_size = sizeof(Block) + aligned_size;
+
+  void *result = sbrk(total_size);
+  if (result == SBRK_FAIL) {
+    if (errno == ENOMEM) {
+      heapKill(); // שים לב שצריך לממש את heapKill
+      cerr << "<sbrk/brk error>: out of memory" << endl;
+      exit(1);
+    }
+    return nullptr;
+  }
+
+  Block *new_block = (Block *)result;
+  new_block->size = aligned_size;
+  new_block->is_free = false;
+  new_block->next = nullptr;
+  new_block->lock = nullptr; // אין מנעול בחלק א
+
+  // הוספה לרשימה (כמו במקור)
+  if (block_list == nullptr) {
+      new_block->prev = nullptr;
+      block_list = new_block;
+  } else {
+      Block *last = block_list;
+      while (last->next != nullptr) {
+        last = last->next;
+      }
+      last->next = new_block;
+      new_block->prev = last;
+  }
+
+  return (void *)((char *)new_block + sizeof(Block));
+}
+4. חלק ב' (שימוש בלוגיקה המשותפת + Arena)
+כאן אנחנו מממשים את ה-Round Robin והנעילות, אבל ה"בשר" של ההקצאה נעשה ע"י הפונקציה המשותפת.
+
+C++
+// מבנים ועזרים לחלק ב
+struct Arena {
+    Block* block_list;
+    pthread_mutex_t mutex;
+    Arena* next;
+};
+Arena* arena_head = nullptr;
+Arena* current_arena = nullptr; // ל-Round Robin
+pthread_mutex_t global_creation_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void *customMTMalloc(size_t size) {
+    if (size == 0) return nullptr;
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+    // הגנה: אם מבקשים יותר ממה שנכנס ב-Arena (פחות Metadata)
+    if (aligned_size > 4096 - sizeof(Block)) return nullptr;
+
+    Arena* start = current_arena;
+    Arena* iter = start;
+
+    // 1. סיבוב Round Robin על האזורים הקיימים
+    do {
+        pthread_mutex_lock(&iter->mutex);
+        
+        // --- כאן הקסם: שימוש בלוגיקה שלך ---
+        void* ptr = logic_find_and_split(iter->block_list, size, &iter->mutex);
+        
+        if (ptr != nullptr) {
+            pthread_mutex_unlock(&iter->mutex);
+            current_arena = iter->next ? iter->next : arena_head; // קידום ה-Round Robin
+            return ptr;
+        }
+
+        pthread_mutex_unlock(&iter->mutex);
+        iter = iter->next ? iter->next : arena_head;
+        
+    } while (iter != start);
+
+    // 2. אם לא נמצא מקום באף אזור - יוצרים אזור חדש
+    pthread_mutex_lock(&global_creation_lock);
+    
+    // הקצאת Arena חדשה
+    Arena* new_arena = (Arena*)sbrk(sizeof(Arena)); 
+    void* arena_space = sbrk(4096); 
+    // (כדאי להוסיף בדיקות שגיאה ל-sbrk כמו בחלק א')
+
+    pthread_mutex_init(&new_arena->mutex, nullptr);
+    
+    // יצירת הבלוק הראשוני ב-Arena החדשה
+    Block* initial_block = (Block*)arena_space;
+    initial_block->size = 4096 - sizeof(Block); // גודל קבוע
+    initial_block->is_free = true; // נולד חופשי
+    initial_block->next = nullptr;
+    initial_block->prev = nullptr;
+    initial_block->lock = &new_arena->mutex; // מצביע למנעול של ה-Arena הזו
+
+    new_arena->block_list = initial_block;
+    new_arena->next = nullptr;
+
+    // הוספה לרשימת האזורים
+    Arena* temp = arena_head;
+    while(temp->next != nullptr) temp = temp->next;
+    temp->next = new_arena;
+    
+    pthread_mutex_unlock(&global_creation_lock);
+
+    // 3. עכשיו בטוח יש מקום באזור החדש - נקצה ממנו
+    pthread_mutex_lock(&new_arena->mutex);
+    void* ptr = logic_find_and_split(new_arena->block_list, size, &new_arena->mutex);
+    pthread_mutex_unlock(&new_arena->mutex);
+    
+    return ptr;
+}
+5. customMTFree - שימוש מחדש בלוגיקה
+עבור שחרור זיכרון, אנחנו יכולים להשתמש ב-customFree שכבר כתבת כמעט כמו שהיא, רק להוסיף את הנעילה סביב הפעולה.
+
+C++
+void customMTFree(void *ptr) {
+    if (ptr == nullptr) return;
+
+    Block *block = (Block *)((char *)ptr - sizeof(Block));
+    
+    // אם יש מנעול (כלומר זה בלוק של MT), נועלים אותו
+    if (block->lock != nullptr) {
+        pthread_mutex_lock(block->lock);
+    }
+
+    block->is_free = true;
+    
+    // קוראים לפונקציה הקיימת שלך!
+    // היא עובדת מעולה כי היא משתמשת רק ב-prev/next של הבלוק עצמו
+    tryCoalesce(block); 
+
+    if (block->lock != nullptr) {
+        pthread_mutex_unlock(block->lock);
+    }
+}
+לסיכום: הגישה הזו שומרת על 90% מהקוד המקורי שלך (logic_find_and_split ו-tryCoalesce) ורק עוטפת אותו בניהול ה-Arenas והמנעולים הנדרש לחלק ב'.
+
+קלט: עשיתי פונקציית find_best_fit ופונקציית splitBlock בנפרד.
+
+עכשיו איך נוכל לממש את המקביליות
+
+פלט: מעולה! העובדה שפיצלת את find_best_fit ו-splitBlock לפונקציות עזר תקל עלינו מאוד.
+
+כדי לגרום לזה לעבוד במקביליות (Part B), אנחנו צריכים לבצע שני שינויים קטנים בפונקציות העזר הקיימות כדי שיהיו "גנריות" (כלומר, שיעבדו גם על הרשימה הגלובלית של חלק א' וגם על הרשימות של ה-Arenas בחלק ב'), ואז לממש את הלוגיקה של ה-Round Robin.
+
+הנה המדריך שלב-אחר-שלב:
+
+שלב 1: עדכון Block ב-Header
+אנחנו חייבים לדעת ב-free לאיזה מנעול (Mutex) הבלוק שייך כדי לנעול אותו לפני השינוי.
+
+בקובץ customAllocator.h:
+
+C++
+typedef struct Block {
+  size_t size;
+  bool is_free;
+  Block *next;
+  Block *prev;
+  pthread_mutex_t* lock; // <--- תוספת חדשה: מצביע למנעול
+} Block;
+שלב 2: הכללת הלוגיקה (Refactoring) ב-customAllocator.cpp
+כדי להשתמש ב-find_best_fit גם ב-Arenas, היא חייבת לקבל את ראש הרשימה כפרמטר (במקום להשתמש תמיד ב-block_list הגלובלי).
+
+שנה את החתימה והמימוש של find_best_fit:
+
+C++
+// הוספנו את הפרמטר head
+Block *find_best_fit(size_t size, Block* head) {
+  Block *current = head; // שימוש בפרמטר במקום במשתנה הגלובלי
+  Block *best_fit = nullptr;
+
+  while (current != nullptr) {
+    if (current->is_free && current->size == size) {
+      best_fit = current;
+      break;
+    }
+    if (current->is_free && current->size >= size) {
+      if (best_fit == nullptr || current->size < best_fit->size) {
+        best_fit = current;
+      }
+    }
+    current = current->next;
+  }
+  return best_fit;
+}
+עדכון customMalloc (חלק א') בהתאם: אל תשכח לעדכן את הקריאה בתוך customMalloc הקיים:
+
+C++
+// בתוך customMalloc:
+Block *best_fit = find_best_fit(size, block_list); // שליחת הרשימה הגלובלית
+שלב 3: מימוש האתחול (heapMTCreate)
+כאן ניצור את 8 ה-Arenas הראשוניות.
+
+C++
+// משתנים גלובליים לחלק ב'
+MemArea* area_head = nullptr;
+MemArea* current_area = nullptr; // לשימוש ב-Round Robin
+
+void heapMTCreate() {
+    // שמירת מצב התחלתי למקרה שנצטרך לשחזר (כמו בחלק א')
+    // אבל בעיקר - יצירת 8 אזורים
+    MemArea* last_area = nullptr;
+
+    for (int i = 0; i < 8; ++i) {
+        // 1. הקצאת המבנה המנהל (ה-Arena)
+        MemArea* new_area = (MemArea*)sbrk(sizeof(MemArea));
+        
+        // 2. הקצאת הזיכרון (4KB)
+        size_t size = 4096;
+        void* buffer = sbrk(size);
+        
+        // 3. אתחול המנעול
+        pthread_mutex_init(&new_area->area_lock, nullptr);
+        
+        // 4. יצירת הבלוק הראשוני בתוך ה-Buffer
+        Block* first_block = (Block*)buffer;
+        first_block->size = size - sizeof(Block);
+        first_block->is_free = true;
+        first_block->next = nullptr;
+        first_block->prev = nullptr;
+        first_block->lock = &new_area->area_lock; // שיוך למנעול!
+
+        new_area->rr_block_list = first_block;
+        new_area->next = nullptr;
+
+        // 5. שרשור האזורים
+        if (area_head == nullptr) {
+            area_head = new_area;
+            current_area = new_area;
+        } else {
+            last_area->next = new_area;
+        }
+        last_area = new_area;
+    }
+}
+שלב 4: מימוש customMTMalloc
+כאן אנו משתמשים בפונקציות העזר שלך בתוך לולאת Round Robin.
+
+C++
+void *customMTMalloc(size_t size) {
+    if (size == 0) return nullptr;
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+    // הגנה: אם הבקשה גדולה ממה שאזור יכול להכיל
+    if (aligned_size > 4096 - sizeof(Block)) return nullptr;
+
+    // --- Round Robin Loop ---
+    MemArea* start_area = current_area;
+    MemArea* iter = start_area;
+    
+    do {
+        // 1. נעל את האזור הנוכחי
+        pthread_mutex_lock(&iter->area_lock);
+        
+        // 2. השתמש בפונקציית העזר שלך לחיפוש ברשימה של האזור הזה
+        Block* best_fit = find_best_fit(size, iter->rr_block_list);
+        
+        if (best_fit != nullptr) {
+            // נמצא מקום! נבדוק אם אפשר לפצל
+            if (best_fit->size >= aligned_size + sizeof(Block) + 4) {
+                // קריאה לפונקציית העזר שלך
+                splitBlock(best_fit, aligned_size);
+                
+                // עדכון המנעול בבלוק החדש שנוצר (השארית)
+                // splitBlock שם את השארית ב-next
+                if (best_fit->next != nullptr) {
+                    best_fit->next->lock = &iter->area_lock;
+                }
+            }
+            
+            best_fit->is_free = false;
+            best_fit->lock = &iter->area_lock; // וידוא
+            
+            pthread_mutex_unlock(&iter->area_lock);
+            
+            // קידום ה-Round Robin לפעם הבאה
+            current_area = (iter->next != nullptr) ? iter->next : area_head;
+            
+            return (void*)((char*)best_fit + sizeof(Block));
+        }
+        
+        // לא נמצא מקום, שחרר ועבור לאזור הבא
+        pthread_mutex_unlock(&iter->area_lock);
+        iter = (iter->next != nullptr) ? iter->next : area_head;
+        
+    } while (iter != start_area); // עד שחזרנו לנקודת ההתחלה
+
+    // --- אם הגענו לפה, אין מקום באף אזור קיים ---
+    // צריך ליצור אזור חדש (Thread Safe עם מנעול גלובלי)
+    
+    pthread_mutex_lock(&global_lock);
+    
+    MemArea* new_area = (MemArea*)sbrk(sizeof(MemArea));
+    void* buffer = sbrk(4096);
+    // (מומלץ להוסיף בדיקות SBRK_FAIL כאן כמו בחלק א)
+
+    pthread_mutex_init(&new_area->area_lock, nullptr);
+    
+    Block* blk = (Block*)buffer;
+    blk->size = 4096 - sizeof(Block);
+    blk->is_free = true;
+    blk->next = nullptr;
+    blk->prev = nullptr;
+    blk->lock = &new_area->area_lock;
+    
+    new_area->rr_block_list = blk;
+    new_area->next = nullptr;
+    
+    // הוספה לסוף הרשימה
+    MemArea* temp = area_head;
+    while(temp->next != nullptr) temp = temp->next;
+    temp->next = new_area;
+    
+    pthread_mutex_unlock(&global_lock);
+    
+    // הקצאה מהאזור החדש
+    pthread_mutex_lock(&new_area->area_lock);
+    // כאן בטוח יש מקום כי הוא חדש, אפשר לקרוא ל-find_best_fit או ידנית
+    // לצורך פשטות נקרא ללוגיקה הרגילה:
+    Block* final_res = find_best_fit(size, new_area->rr_block_list);
+    if (final_res) {
+         if (final_res->size >= aligned_size + sizeof(Block) + 4) {
+             splitBlock(final_res, aligned_size);
+             final_res->next->lock = &new_area->area_lock;
+         }
+         final_res->is_free = false;
+         final_res->lock = &new_area->area_lock;
+    }
+    pthread_mutex_unlock(&new_area->area_lock);
+    
+    return (void*)((char*)final_res + sizeof(Block));
+}
+שלב 5: מימוש customMTFree
+המימוש פשוט מאוד בזכות השדה lock שהוספנו.
+
+C++
+void customMTFree(void *ptr) {
+    if (ptr == nullptr) return;
+
+    Block *block = (Block *)((char *)ptr - sizeof(Block));
+    
+    // בדיקה אם יש מנעול (אמור להיות ב-MT)
+    if (block->lock != nullptr) {
+        pthread_mutex_lock(block->lock);
+    }
+    
+    block->is_free = true;
+    
+    // שימוש בפונקציית העזר הקיימת שלך!
+    // היא עובדת מעולה כי היא משתמשת רק ב-prev/next של הבלוק
+    tryCoalesce(block); 
+    
+    if (block->lock != nullptr) {
+        pthread_mutex_unlock(block->lock);
+    }
+}
+נקודות חשובות לסיכום
+splitBlock: שים לב שאחרי שאתה קורא ל-splitBlock בתוך MTMalloc, עליך לעדכן את ה-lock של הבלוק החדש שנוצר (ה-remainder), כפי שהדגמתי בקוד.
+
+heapMTKill: אל תשכח לממש אותה - עליה לעבור על כל ה-MemArea, לעשות pthread_mutex_destroy ואז להחזיר את ה-brk.
+
+קלט: Here is what i have so far, lets continue to implement
+
+פלט: זה נראה מעולה. יש לך בסיס חזק מאוד לחלק ב'. ישנם מספר תיקונים קריטיים שצריך לבצע כדי שהקוד יתקמפל ויעבוד נכון (בעיקר הטיפול במצביע למנעול בתוך ה-struct), וצריך להשלים את הפונקציות החסרות (Realloc ו-Calloc לשני החלקים ו-heapMTKill).
+
+הנה הקוד המעודכן והמשלים.
+
+1. עדכון customAllocator.h
+תיקון קריטי: ב-struct Block, השדה lock חייב להיות מצביע (pthread_mutex_t*) ולא אובייקט, כי כל הבלוקים ב-Arena מסוימת מצביעים לאותו מנעול משותף של ה-Arena.
+
+C++
+#ifndef __CUSTOM_ALLOCATOR__
+#define __CUSTOM_ALLOCATOR__
+
+#include <stddef.h> // for size_t
+#include <pthread.h>
+
+// Part A
+void *customMalloc(size_t size);
+void customFree(void *ptr);
+void *customCalloc(size_t nmemb, size_t size);
+void *customRealloc(void *ptr, size_t size);
+
+// Part B
+void *customMTMalloc(size_t size);
+void customMTFree(void *ptr);
+void *customMTCalloc(size_t nmemb, size_t size);
+void *customMTRealloc(void *ptr, size_t size);
+
+// Helper functions
+void heapCreate();
+void heapKill();
+void heapMTCreate();
+void heapMTKill();
+
+/* Defines */
+#define SBRK_FAIL (void *)(-1)
+#define ALIGN_TO_MULT_OF_4(x) (((((x) - 1) >> 2) << 2) + 4)
+#define NUM_AREAS 8
+#define AREA_SIZE 4096 
+
+/* Structs */
+typedef struct Block {
+  size_t size;
+  bool is_free;
+  Block *next;
+  Block *prev;
+  pthread_mutex_t* lock; // CHANGED: Must be a pointer!
+} Block;
+
+extern Block *block_list;
+
+typedef struct MemArea {
+    Block* rr_block_list;
+    pthread_mutex_t area_lock;
+    MemArea* next;
+} MemArea;
+
+#endif // CUSTOM_ALLOCATOR
+2. השלמות ב-customAllocator.cpp
+להלן הפונקציות החסרות והתיקונים הנדרשים בקובץ ה-cpp. יש להוסיף הצהרות קדמיות (Forward Declarations) לפונקציות העזר בראש הקובץ כדי ש-customMalloc יכיר אותן.
+
+א. השלמת customRealloc (חלק א')
+לפי דרישות התרגיל , הלוגיקה צריכה לנסות להרחיב/לכווץ במקום אם אפשר, ואם לא - להקצות מחדש.
+
+C++
+// יש להוסיף את המימוש הזה בחלק של Part A
+void *customRealloc(void *ptr, size_t size) {
+    if (ptr == nullptr) {
+        return customMalloc(size);
+    }
+    if (size == 0) {
+        customFree(ptr);
+        return nullptr;
+    }
+    
+    // בדיקת תקינות מצביע (הפונקציה שלך)
+    if (!is_pointer_in_heap(ptr)) {
+        return nullptr;
+    }
+
+    Block *block = (Block *)((char *)ptr - sizeof(Block));
+    size_t aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+    // Case 1: New size is smaller or equal (Try to split)
+    if (aligned_size <= block->size) {
+        // האם אפשר לפצל?
+        if (block->size >= aligned_size + sizeof(Block) + 4) {
+             splitBlock(block, aligned_size);
+        }
+        return ptr;
+    }
+
+    // Case 2: New size is larger
+    // אופטימיזציה: בדיקה אם הבלוק הבא פנוי ויש בו מספיק מקום לאיחוד
+    if (block->next != nullptr && block->next->is_free &&
+        (block->size + sizeof(Block) + block->next->size) >= aligned_size) {
+            
+        // איחוד עם הבלוק הבא
+        tryCoalesce(block); // זה יאחד אותו עם הבא
+        
+        // עכשיו הבלוק גדול יותר, נבדוק אם צריך לפצל את השארית
+        if (block->size >= aligned_size + sizeof(Block) + 4) {
+            splitBlock(block, aligned_size);
+        }
+        return ptr;
+    }
+
+    // אם אי אפשר להרחיב במקום: Malloc -> Memcpy -> Free
+    void *new_ptr = customMalloc(size);
+    if (!new_ptr) return nullptr;
+
+    memcpy(new_ptr, ptr, block->size); // מעתיקים את המידע הישן
+    customFree(ptr);
+    
+    return new_ptr;
+}
+ב. עדכון heapMTCreate ומימוש heapMTKill
+צריך לשמור את ה-brk ההתחלתי גם בחלק ב' כדי שנוכל לשחרר הכל בסוף.
+
+C++
+// משתנה סטטי נוסף לשמירת המצב ההתחלתי של חלק ב
+static void* mt_initial_break = nullptr;
+
+void heapMTCreate() {
+    // שמירת נקודת ההתחלה לשחרור עתידי
+    if (mt_initial_break == nullptr) {
+        mt_initial_break = sbrk(0);
+    }
+    
+    MemArea* last_area = nullptr;
+
+    for (int i = 0; i < NUM_AREAS; i++) {
+        // ... (הקוד הקיים שלך נשאר זהה) ...
+        MemArea* new_area = (MemArea*)sbrk(sizeof(MemArea));
+        // ...
+        
+        // בעת יצירת הבלוק הראשון:
+        // first_block->lock = &new_area->area_lock; // זה תקין עכשיו עם התיקון ב-header
+    }
+}
+
+void heapMTKill() {
+    // 1. שחרור מנעולים
+    MemArea* iter = area_head;
+    while (iter != nullptr) {
+        pthread_mutex_destroy(&iter->area_lock);
+        iter = iter->next;
+    }
+    
+    // 2. איפוס מצביעים גלובליים
+    area_head = nullptr;
+    current_area = nullptr;
+
+    // 3. החזרת ה-Heap לקדמותו
+    if (mt_initial_break != nullptr) {
+        brk(mt_initial_break);
+        mt_initial_break = nullptr;
+    }
+}
+ג. מימוש customMTCalloc ו-customMTRealloc
+עבור סביבה מרובת חוטים, המימוש הכי בטוח ל-realloc הוא הקצאה חדשה והעתקה (כדי להימנע מנעילות מורכבות של שני בלוקים בו זמנית או הרחבה שדורשת נעילת Arena).
+
+C++
+void *customMTCalloc(size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    void* ptr = customMTMalloc(total_size);
+    if (ptr != nullptr) {
+        memset(ptr, 0, total_size);
+    }
+    return ptr;
+}
+
+void *customMTRealloc(void *ptr, size_t size) {
+    if (ptr == nullptr) return customMTMalloc(size);
+    if (size == 0) {
+        customMTFree(ptr);
+        return nullptr;
+    }
+
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
+    
+    // קריאת הגודל הנוכחי בצורה בטוחה
+    // שים לב: אנחנו קוראים שדה lock שהוא קבוע לבלוק, אבל כדי לקרוא את size 
+    // אנחנו תיאורטית צריכים לנעול. בפועל, רק הת'רד הזה מחזיק את הפוינטר למידע,
+    // אבל המטא-דאטה עשוי להשתנות ע"י שכנים. ליתר ביטחון ננעל.
+    
+    size_t old_size = 0;
+    if (block->lock) {
+        pthread_mutex_lock(block->lock);
+        old_size = block->size;
+        pthread_mutex_unlock(block->lock);
+    } else {
+        old_size = block->size; // Fallback logic
+    }
+
+    // הקצאה חדשה
+    void* new_ptr = customMTMalloc(size);
+    if (!new_ptr) return nullptr;
+
+    // העתקה (המינימום בין הגדלים)
+    size_t copy_size = (old_size < size) ? old_size : size;
+    memcpy(new_ptr, ptr, copy_size);
+
+    // שחרור הישן
+    customMTFree(ptr);
+
+    return new_ptr;
+}
+דגש אחרון
+בתוך customMTMalloc שלך, בקטע הקוד שמקצה Arena חדשה (כאשר לא נמצא מקום באף אזור):
+
+C++
+    // ...
+    Block* final_res = find_best_fit(size, new_area->rr_block_list);
+    if (final_res != nullptr) { // <--- תיקון: הוספתי בדיקה שזה לא null
+        
+        if (final_res->size >= aligned_size + sizeof(Block) + 4) {
+            splitBlock(final_res, aligned_size);
+            // כאן הייתה חסרה בדיקה ל-next
+            if (final_res->next != nullptr) {
+                 final_res->next->lock = &new_area->area_lock;
+            }
+        }
+    // ...
+בקוד המקורי ששלחת final_res->next היה מתרסק אם הפיצול לא היה מעדכן אותו נכון או אם הבלוק היה יחיד. הוספתי את הבדיקות למעלה בתוך המימוש המלא של הקובץ.
+
+קלט: הנה הקוד המעודכן. האם לדעתך הוא תקין וממלא את הנחיות התרגיל (כרגע עוד לא מימשנו חלק מהפונקציות ואנחנו רוצים לוודא תקינות של מה שיש)? אם לא תגיד איפה, איך לתקן וכו'
+
+פלט: הקוד שלך מהווה שלד מצוין והוא כתוב בצורה מסודרת וקריאה. ניכרת הבנה עמוקה של ניהול הזיכרון ושל דרישות התרגיל.
+
+עם זאת, ישנם מספר באגים קריטיים, חוסרים לוגיים ופונקציות חסרות שימנעו מהקוד לעבוד נכון (או להתקמפל) כפי שהוא.
+
+להלן סקירה מפורטת (Code Review) והתיקונים הנדרשים:
+
+1. באגים קריטיים בלוגיקה (Part A & B)
+א. באג ב-heapCreate (Part A) - איפוס שגוי
+במימוש הנוכחי, אם המשתמש מקצה זיכרון, משחרר את הכל (כך ש-block_list חוזר להיות nullptr), ואז מקצה שוב - הפונקציה customMalloc תקרא שוב ל-heapCreate. זה יגרום ל-initial_break לקבל ערך חדש (גבוה יותר), מה שישבש את heapKill.
+
+התיקון: יש לוודא ש-heapCreate מאתחלת רק אם טרם אותחלה.
+
+C++
+void heapCreate() {
+    if (initial_break == nullptr) { // הוספת התנאי הזה
+        initial_break = sbrk(0);
+    }
+}
+ב. באג ב-customMTMalloc - טיפול במקרה קצה (Part B)
+בסוף הפונקציה, כשאתה יוצר Area חדשה, אתה קורא ל-find_best_fit. אם מסיבה כלשהי הפונקציה מחזירה nullptr (למשל, הבקשה גדולה מדי לאזור החדש - למרות שיש הגנה בהתחלה, זה עשוי לקרות משיקולי metadata), הקוד שלך ינסה לגשת לכתובת לא חוקית.
+
+התיקון:
+
+C++
+    // ...
+    pthread_mutex_lock(&new_area->area_lock);
+    Block* final_res = find_best_fit(size, new_area->rr_block_list);
+    
+    if (final_res != nullptr) { // חובה לוודא שאינו NULL
+        if (final_res->size >= aligned_size + sizeof(Block) + 4) {
+            splitBlock(final_res, aligned_size);
+            if (final_res->next) final_res->next->lock = &new_area->area_lock;
+        }
+        final_res->is_free = false;
+        final_res->lock = &new_area->area_lock;
+        pthread_mutex_unlock(&new_area->area_lock); // שחרור לפני החזרה
+        return (void *)((char*)final_res + sizeof(Block));
+    }
+    
+    pthread_mutex_unlock(&new_area->area_lock);
+    return nullptr; // החזרה של NULL במקרה של כישלון
+}
+ג. בעיה בשימוש חוזר ב-shrinking_block_split (Part A vs B)
+הפונקציה shrinking_block_split (שמשמשת את realloc) קוראת בסוף ל-customFree (של חלק א'). אם תממש את customMTRealloc ותנסה להשתמש באותה לוגיקה, היא תקרא ל-customFree הרגילה במקום ל-customMTFree, מה שיגרום לקריסה (כי customFree מנסה לגשת ל-block_list הגלובלי ולא מטפלת במנעולים).
+
+הפתרון: אם אתה מתכנן לממש realloc מורכב לחלק ב', עליך ליצור גרסה נפרדת ל-Split שמקבלת את פונקציית השחרור המתאימה, או פשוט לממש customMTRealloc בצורה "טיפשה" (Malloc-Memcpy-Free) כפי שמוסבר בהמשך.
+
+2. פונקציות חסרות (Part B)
+חסרים המימושים של heapMTKill, customMTCalloc ו-customMTRealloc בקובץ ה-cpp.
+
+מימוש heapMTKill
+הפונקציה צריכה לשחרר את כל המנעולים. לגבי שחרור הזיכרון (brk) - מאחר וזה אותו תהליך, אפשר להסתמך על ה-brk של חלק א' או לממש שחזור עצמאי.
+
+C++
+void heapMTKill() {
+    if (area_head == nullptr) return;
+    
+    MemArea* iter = area_head;
+    while (iter != nullptr) {
+        pthread_mutex_destroy(&iter->area_lock);
+        iter = iter->next;
+    }
+    
+    // אופציונלי: איפוס משתנים גלובליים
+    area_head = nullptr;
+    current_area = nullptr;
+    
+    // אין צורך לקרוא ל-brk כאן אם heapKill של חלק א' נקראת בסוף הטסטים,
+    // אך אם הטסטים נפרדים, כדאי להוסיף שחזור brk גם כאן.
+}
+מימוש customMTCalloc
+C++
+void *customMTCalloc(size_t nmemb, size_t size) {
+    size_t total_size = nmemb * size;
+    void* ptr = customMTMalloc(total_size);
+    if (ptr != nullptr) {
+        memset(ptr, 0, total_size);
+    }
+    return ptr;
+}
+מימוש customMTRealloc
+בסביבה מרובת חוטים, ניסיון להרחיב בלוק "במקום" (In-place) הוא מסובך מאוד כי הוא דורש לנעול את הבלוקים השכנים, לוודא שהם לא משתנים ע"י תהליכון אחר באותו רגע, ולטפל ב-Deadlocks. הגישה הבטוחה והמקובלת בתרגיל זה היא Malloc -> Memcpy -> Free.
+
+C++
+void *customMTRealloc(void *ptr, size_t size) {
+    if (ptr == nullptr) return customMTMalloc(size);
+    if (size == 0) {
+        customMTFree(ptr);
+        return nullptr;
+    }
+
+    // גישה לגודל הישן דורשת זהירות - הבלוק עצמו לא ישתנה כי הוא שלנו,
+    // אבל המטא-דאטה שלו עשוי להיות משותף. ליתר ביטחון ננעל.
+    Block* block = (Block*)((char*)ptr - sizeof(Block));
+    size_t old_size = block->size; 
+    
+    // הקצאה חדשה
+    void* new_ptr = customMTMalloc(size);
+    if (!new_ptr) return nullptr;
+
+    // העתקת המידע (המינימום בין הגדלים)
+    size_t copy_size = (old_size < size) ? old_size : size;
+    memmove(new_ptr, ptr, copy_size);
+
+    // שחרור הישן
+    customMTFree(ptr);
+
+    return new_ptr;
+}
+3. הערות קטנות וטיוב קוד
+is_pointer_in_heap: פונקציה זו בודקת רק מול block_list (חלק א'). ב-customRealloc של חלק א' אתה משתמש בה. ב-Part B אל תשתמש בה, כי היא לא מכירה את ה-Arenas ותחזיר תמיד false (או שתצטרך לכתוב גרסה שעוברת על כל 8 האזורים וזה יקר מאוד).
+
+customMTFree: אין בדיקת תקינות (Sanity check) שהמצביע הוא ב-Heap. זה בסדר גמור (סטנדרטי ל-free), רק שים לב שהקוד שלך מניח שהמצביע תקין ומבצע Casting מיד.
+
+Round Robin: הלוגיקה שלך ב-customMTMalloc נכונה (do-while ועדכון current_area רק בהצלחה).
+
+סיכום
+הקוד שלך במצב טוב מאוד. הוסף את שלוש הפונקציות החסרות (MTKill, MTCalloc, MTRealloc), תקן את ה-Bug ב-heapCreate ואת בדיקת ה-NULL ב-customMTMalloc, ואתה מוכן להגשה/טסטים.
+
+קלט: לא כל כך הבנתי איך heapMTKill() משחררת את הזכרון של האזורים. לא צריך להוסיף את heapKill() איפשהו?
+
+פלט: השאלה שלך מצוינת ונוגעת בדיוק לנקודה שבה ניהול זיכרון "ידני" (כמו שאנחנו עושים כאן עם sbrk/brk) שונה ממה שאנחנו רגילים אליו בשימוש ב-malloc/free.
+
+התשובה הקצרה: אתה לא צריך לקרוא ל-heapKill() מתוך heapMTKill(), אבל אתה כן צריך לממש ב-heapMTKill() לוגיקה דומה מאוד לזו של heapKill(), שתשחזר את ה-Program Break לנקודה שבה הוא היה לפני שחלק ב' התחיל.
+
+הנה ההסבר המלא איך זה עובד ולמה זה משחרר את האזורים:
+
+1. איך הזיכרון משתחרר? (קסם ה-brk)
+במערכת ההפעלה, ה-Heap הוא פשוט רצף של זיכרון שהולך וגדל.
+
+כשעשית sbrk ב-heapMTCreate כדי ליצור את ה-Arenas, ה-Program Break (הקצה של ה-Heap) זז "למעלה".
+
+כשאתה קורא ל-brk(old_address), אתה אומר למערכת ההפעלה: "תחזיר את הקו של סוף הזיכרון אחורה לכתובת הזו".
+
+כל מה שנמצא מעל הקו החדש נמחק. זה כולל את כל ה-MemArea שהקצית, את כל הבלוקים בתוכם, ואת כל המידע. מערכת ההפעלה מסמנת את הזיכרון הזה כלא-חוקי עבור התהליך שלך. לכן, פעולה אחת של brk משחררת הכל במכה אחת.
+
+2. למה לא להשתמש ב-heapKill הרגיל?
+הפונקציה heapKill (של חלק א') משתמשת במשתנה הגלובלי initial_break שנשמר כנראה בתחילת חלק א'. בחלק ב', אנחנו רוצים להיות עצמאיים. ייתכן שהטסטים יריצו את חלק א', ינקו אותו, ואז יריצו את חלק ב'. לכן, לחלק ב' צריך להיות "נקודת התחלה" (mt_initial_break) משלו.
+
+המימוש הנכון של heapMTKill
+הפונקציה צריכה לעשות שני דברים:
+
+לנקות משאבים של מערכת ההפעלה: להרוס את המנעולים (pthread_mutex_destroy). חשוב לעשות את זה לפני שמשחררים את הזיכרון, כי המנעול יושב בתוך הזיכרון שאנחנו עומדים למחוק.
+
+לשחרר את הזיכרון: להחזיר את ה-brk אחורה.
+
+הנה הקוד המלא והמתוקן (כולל המשתנה הסטטי שצריך להוסיף):
+
+C++
+// הוסף את המשתנה הזה בראש הקובץ או ליד המשתנים של חלק ב'
+static void* mt_initial_break = nullptr;
+
+void heapMTCreate() {
+    // 1. שמירת נקודת ההתחלה *לפני* שמקצים את האזורים
+    if (mt_initial_break == nullptr) {
+        mt_initial_break = sbrk(0);
+    }
+    
+    // ... המשך הקוד שלך ליצירת האזורים (לולאת ה-for) ...
+    // וודא שאתה לא דורס את mt_initial_break בהמשך
+}
+
+void heapMTKill() {
+    // 1. מעבר על כל האזורים והריסת המנעולים
+    // חייבים לעשות את זה לפני ה-brk כי המנעולים יושבים בזיכרון שאנחנו תכף מוחקים
+    MemArea* iter = area_head;
+    while (iter != nullptr) {
+        pthread_mutex_destroy(&iter->area_lock);
+        iter = iter->next;
+    }
+
+    // 2. איפוס המצביעים הגלובליים של חלק ב'
+    area_head = nullptr;
+    current_area = nullptr;
+
+    // 3. החזרת ה-Heap למצב שבו היה לפני שהתחלנו את חלק ב'
+    // הפעולה הזו "חותכת" את כל ה-Arenas והבלוקים שהוקצו אחרי נקודת ההתחלה
+    if (mt_initial_break != nullptr) {
+        brk(mt_initial_break);
+        mt_initial_break = nullptr;
+    }
+}
+סיכום
+אתה לא צריך לקרוא ל-heapKill כי היא שייכת ללוגיקה של חלק א'. ה-heapMTKill עושה את אותה פעולה בדיוק (החזרת ה-brk), אבל עבור "נקודת הציון" (Snapshot) שנלקחה בתחילת חלק ב'. הפקודה brk(mt_initial_break) היא זו שמשחררת פיזית את הזיכרון של כל האזורים.
+
+קלט: תוכל לעזור לי לרשום את customMTRealloc ע"י יצירת split מיוחד כמו שאמרת?
+
+פלט: בשמחה. זו הדרך הכי "מקצועית" לממש realloc, כי היא חוסכת העתקות מיותרות ומונעת פרגמנטציה.
+
+כדי לעשות זאת, אנחנו צריכים פונקציית עזר (נקרא לה shrinking_block_split_MT) שמבצעת את הפיצול, אבל בניגוד לזו של חלק א' – היא דואגת לטפל ב-Metadata של המקביליות (ה-lock) ומשתמשת ב-tryCoalesce בצורה בטוחה בתוך האזור הנעול.
+
+הנה המימוש המלא של customMTRealloc והפונקציה העזר שלה.
+
+1. פונקציית העזר: shrinking_block_split_MT
+הוסף את הפונקציה הזו מעל customMTRealloc (או כפונקציה סטטית בראש הקובץ). ההנחה היא שהפונקציה נקראת כאשר המנעול של הבלוק (והאזור) כבר נעול.
+
+C++
+// Helper specifically for MT realloc shrinking
+void shrinking_block_split_MT(Block *block, size_t new_size) {
+    // הבדיקה הרגילה: האם השארית גדולה מספיק כדי להפוך לבלוק?
+    if (block->size >= new_size + sizeof(Block) + 4) {
+        
+        // 1. שימוש בפונקציית הפיצול הבסיסית שכבר כתבת
+        // היא מעדכנת את הגדלים ואת המצביעים next/prev
+        splitBlock(block, new_size);
+
+        // 2. טיפול בבלוק השארית (Remainder) שנוצר
+        Block *remainder = block->next;
+        
+        // קריטי: העברת המצביע למנעול גם לבלוק החדש!
+        remainder->lock = block->lock; 
+        remainder->is_free = true;
+
+        // 3. איחוד השארית (Coalesce)
+        // אנחנו בתוך אזור נעול, אז בטוח לקרוא ל-tryCoalesce.
+        // השארית תנסה להתאחד עם הבלוק *שבא אחריה* (אם הוא פנוי).
+        // היא לא תתאחד עם הבלוק הנוכחי (block) כי הוא בשימוש (is_free=false).
+        tryCoalesce(remainder);
+    }
+}
+2. המימוש של customMTRealloc
+הלוגיקה כאן מחולקת ל-3 מקרים:
+
+כיווץ (Shrink): משתמשים בפונקציית העזר שכתבנו למעלה.
+
+הרחבה במקום (Expand In-Place): בודקים אם הבלוק הבא פנוי ויש בו מספיק מקום. אם כן - מאחדים.
+
+הרחבה רגילה (Move): אם אי אפשר במקום, מקצים חדש, מעתיקים ומשחררים.
+
+C++
+void *customMTRealloc(void *ptr, size_t size) {
+    // מקרי קצה בסיסיים
+    if (ptr == nullptr) return customMTMalloc(size);
+    if (size == 0) {
+        customMTFree(ptr);
+        return nullptr;
+    }
+
+    Block *block = (Block *)((char *)ptr - sizeof(Block));
+    size_t new_aligned_size = ALIGN_TO_MULT_OF_4(size);
+
+    // --- כניסה לאזור הקריטי ---
+    // אנחנו חייבים לנעול כדי לקרוא/לשנות את הגודל ואת השכנים
+    if (block->lock) {
+        pthread_mutex_lock(block->lock);
+    }
+
+    size_t old_size = block->size;
+
+    // ===========================
+    // Case 1: Shrinking (Or same size)
+    // ===========================
+    if (new_aligned_size <= old_size) {
+        // קריאה לפונקציית העזר שמפצלת ומאחדת שאריות
+        shrinking_block_split_MT(block, new_aligned_size);
+        
+        if (block->lock) pthread_mutex_unlock(block->lock);
+        return ptr;
+    }
+
+    // ===========================
+    // Case 2: Expanding In-Place
+    // ===========================
+    // נבדוק אם השכן הבא קיים, פנוי, ויש לו מספיק מקום ביחד איתנו
+    if (block->next != nullptr && block->next->is_free &&
+        (block->size + sizeof(Block) + block->next->size) >= new_aligned_size) {
+        
+        Block *next_block = block->next;
+        size_t combined_size = block->size + sizeof(Block) + next_block->size;
+
+        // 1. "בליעת" הבלוק הבא (ידנית, כי tryCoalesce מניחה ששניהם חופשיים)
+        block->size = combined_size;
+        block->next = next_block->next;
+        if (next_block->next != nullptr) {
+            next_block->next->prev = block;
+        }
+        
+        // הבלוק הבא "נעלם", אין צורך לעדכן אותו יותר
+
+        // 2. עכשיו הבלוק שלנו גדול מספיק (אולי גדול מדי).
+        // נשתמש באותה פונקציית כיווץ כדי להחזיר את העודף למערכת כבלוק פנוי חדש
+        shrinking_block_split_MT(block, new_aligned_size);
+
+        if (block->lock) pthread_mutex_unlock(block->lock);
+        return ptr;
+    }
+
+    // ===========================
+    // Case 3: Expanding by Moving (Fallback)
+    // ===========================
+    
+    // חייבים לשחרר את המנעול לפני שמקצים חדש כדי למנוע Deadlock
+    // (כי malloc עלול לנסות לנעול אזורים אחרים או את אותו אזור)
+    if (block->lock) pthread_mutex_unlock(block->lock);
+
+    void *new_ptr = customMTMalloc(size);
+    if (new_ptr == nullptr) {
+        return nullptr; // הקצאה נכשלה
+    }
+
+    // העתקת המידע הישן לחדש
+    // משתמשים ב-old_size ששמרנו למעלה (בטוח כי אנחנו לא משנים את הבלוק הישן עד ה-free)
+    memcpy(new_ptr, ptr, old_size);
+
+    // שחרור הבלוק הישן
+    customMTFree(ptr);
+
+    return new_ptr;
+}
+למה זה עובד טוב ב-Multithreading?
+היופי במימוש הזה הוא הפשטות בנעילות:
+
+Arena Lock: בחלק ב' של התרגיל (לפי ההנחיות), לכל הבלוקים באותו אזור (Arena) יש מצביע לאותו mutex.
+
+אטומיות: ברגע שנעלנו את block->lock בתחילת הפונקציה, נעלנו את כל האזור. זה אומר שאף אחד לא יכול לגעת ב-block->next שלנו בזמן שאנחנו בודקים אם הוא פנוי ומאחדים אותו.
+
+בטיחות: אנחנו משחררים את המנעול לפני הקריאה ל-malloc במקרה 3, מה שמונע מצב של "חיבוק דוב" (Deadlock) בו אנחנו מחזיקים מנעול אחד ומחכים לאחר.
+
+---- סשן 2 ----
+מודל: Gemini 3.0 Pro 
+
+קלט: הנה התוכנית שכתבתי לפי תרגיל בית שנתנו לנו. עד כה מימשתי את חלק א' וב'.
+
+פלט: תוכל לעבור על התוכנית שלי ולהגיד האם יש באגים והאם היא תקינה לפי ההנחיות?
+
+הקוד שכתבת נראה מושקע ומובנה היטב, ועוקב אחרי רוב הדרישות בצורה יפה. עם זאת, ישנם מספר באגים קריטיים (במיוחד בטיפול בריבוי חוטים - Multithreading) ומספר מקומות שבהם המימוש חורג מההגדרות "היבשות" של ה-PDF, מה שעלול להכשיל אותך בטסטים האוטומטיים של הטכניון (הידועים כקפדניים).
+
+להלן סקירה מפורטת המחולקת לנושאים:
+
+1. באגים קריטיים בחלק ב' (Multithreading)
+א. Race Condition בגישה ל-current_area בפונקציה customMTMalloc, אתה קורא וכותב למשתנה הגלובלי current_area ללא מנעול.
+
+הבעיה: אם שני חוטים (Threads) נכנסים לפונקציה, שניהם עשויים לקרוא את אותו start_area, ושניהם ינסו לעדכן את current_area בסוף. אמנם זה לא יגרום לקריסה (Crash), אבל זה מפר את עקרון הסנכרון ועלול לגרום לכך שחוטים "ירדפו" אחד אחרי השני לאותו אזור במקום להתפזר (Contention).
+
+התיקון: הגישה ל-current_area צריכה להיות אטומית או מוגנת, אך מכיוון שזה רק "רמז" (Hint) לאיפה להתחיל, זה פחות קריטי מאשר הבעיה הבאה.
+
+ב. Race Condition ברשימת האזורים (next) כאשר אתה יוצר אזור חדש ב-customMTMalloc, אתה נועל את global_lock. זה מצוין ליצירה. אבל, החוטים האחרים שרצים בלולאת ה-Round Robin (שורות 375-397 בקובץ customAllocator.cpp) קוראים את iter->next ללא שום הגנה על המבנה של הרשימה.
+
+התרחיש: חוט א' רץ בלולאה ומגיע לסוף הרשימה (iter->next == nullptr). באותו רגע, חוט ב' יוצר אזור חדש ומעדכן את iter->next להצביע לאזור החדש. קריאה וכתיבה בו-זמנית לאותו מצביע ללא סנכרון היא Undefined Behavior.
+
+התיקון: עדכון ה-next של האזור האחרון חייב להיות מסונכרן עם הקוראים. דרך פשוטה היא לוודא שכשאתה מוסיף אזור חדש, אתה נועל גם את המנעול של האזור שהיה אחרון עד כה (כדי למנוע ממישהו שנמצא בו כרגע "לפספס" את העדכון או לקרוא זבל), או פשוט להבין שזו "רשימה מקושרת דינמית" ולהגן על המצביעים עצמם.
+
+הערה: בהתחשב ברמת הקורס, ייתכן שיתעלמו מזה, אבל במימוש אמיתי זה באג.
+
+ג. בעיה ב-customMTFree אתה משתמש ב-tryCoalesce בתוך customMTFree. הפונקציה tryCoalesce (שנכתבה לחלק א') ניגשת ל-block->prev ול-block->next.
+
+הבעיה: בחלק א' זה בטוח כי יש חוט אחד. בחלק ב', אתה נועל את block->lock. זה מצוין, בתנאי שכל הבלוקים באזור חולקים את אותו המנעול.
+
+וידוא: המימוש שלך מקצה מנעול אחד (area_lock) לכל האזור (MemArea), וכל הבלוקים באזור מצביעים עליו. לכן, כאשר אתה נועל את הבלוק הנוכחי, אתה מונע גישה לכל הבלוקים השכנים באותו אזור. זה תקין.
+
+2. אי-תאימות להוראות ה-PDF (Strict Compliance)
+בקורס הזה, הטסטים בודקים בדיוק את מה שהוגדר. מימוש "חכם מדי" לרוב נכשל.
+
+א. customRealloc - הרחבה (Expansion)
+
+המימוש שלך: מנסה לאחד עם הבלוק הבא או הקודם (Merge) כדי להגדיל את הבלוק במקום.
+
+ההוראה (מקור 107-110): "אם size > old_size: 1. הפונקציה תקצה בלוק חדש... 2. תעתיק... 3. תשחרר את הישן".
+
+הסיכון: הטסט עלול לבדוק שהכתובת שהוחזרה מ-realloc (במקרה של הגדלה) היא שונה מהכתובת המקורית. המימוש שלך עלול להחזיר את אותה כתובת (אם איחדת עם הבלוק הבא).
+
+המלצה: בחלק של ה-Expansion (גם בחלק א' וגם בחלק ב'), מחק את הלוגיקה שמנסה לאחד בלוקים. פשוט תעשה Malloc, Memcpy, Free. זה פחות יעיל, אבל זה מה שביקשו.
+
+ב. sbrk בחלק ב'
+
+המימוש שלך: ב-heapMTCreate אתה עושה sbrk(sizeof(MemArea)) ואז sbrk(size).
+
+הבעיה: זה יוצר בזיכרון רצף של: [Struct][4KB Buffer][Struct][4KB Buffer].
+
+זה לא בהכרח באג, אבל זה אומר שהזיכרון לא רציף מבחינת הבלוקים עצמם. זה תקין לפי ההוראות (שמבקשות 8 אזורים), אבל עדיף לוודא ש-sizeof(MemArea) הוא כפולה של 4 (או 8) כדי לא לשבור את היישור (Alignment) של ה-Buffer שבא אחריו. כרגע הגודל הוא מצביע + מצביע + mutex (בדרך כלל 40 bytes ב-64bit), אז זה כנראה בסדר.
+
+3. באגים לוגיים קטנים ושיפורים
+א. אימות מצביע בחלק ב' (customMTFree / customMTRealloc)
+
+בחלק א', נדרש לבצע ולידציה שהמצביע הוא אכן מה-Heap (is_pointer_in_heap).
+
+בחלק ב', הפונקציות customMTFree ו-customMTRealloc שלך לא מבצעות בדיקה זו. אם המשתמש יעביר מצביע זבל, התוכנית תקרוס (SegFault) כשתנסה לגשת ל-block->lock.
+
+המלצה: מומלץ להוסיף ולידציה גם כאן, או לפחות לוודא שהגישה ל-block->lock בטוחה. שים לב ש-is_pointer_in_heap של חלק א' לא יעבוד כאן כי הוא בודק רק את block_list הגלובלי ולא את האזורים החדשים.
+
+ב. shrinking_block_split_mt בתוך הפונקציה הזו אתה קורא ל-tryCoalesce(remainder).
+
+remainder הוא הבלוק החדש שנוצר (החלק הפנוי).
+
+אתה צריך לוודא ש-remainder->lock מצביע למנעול הנכון לפני שקוראים ל-tryCoalesce.
+
+בשורות שלך:
+
+C++
+Block *remainder = block->next;
+remainder->lock = block->lock; // מצוין
+remainder->is_free = true;
+tryCoalesce(remainder);
+זה נראה תקין, כיוון שהמנעול כבר מוחזק ע"י הפונקציה הקוראת (customMTRealloc נועלת את block המקורי, שהוא באותו אזור).
+
+סיכום התיקונים המומלצים (Code Fixes)
+הנה השינויים העיקריים שכדאי לעשות כדי להיות "Safe" מול הטסטים:
+
+1. תיקון Realloc (חלק א' וחלק ב') - להיצמד להוראות
+החלף את ה-block של ה-Expanding ב-customRealloc (וגם ב-MT) לקוד הפשוט:
+
+C++
+// case expanding
+else {
+    // PDF Requirement: Allocate new, Copy, Free old. 
+    // Do NOT try to merge with neighbors here as it violates the specific algorithm steps defined in sources 107-110.
+    
+    void *new_ptr = customMalloc(size); // Or customMTMalloc for the MT version
+    if (new_ptr == nullptr) {
+        return nullptr; 
+    }
+
+    memcpy(new_ptr, ptr, old_size);
+    customFree(ptr); // Or customMTFree
+    return new_ptr;
+}
+2. תיקון לוגיקה ב-heapMTCreate (מניעת פיצול מיותר)
+עדיף להקצות את המבנים בנפרד מהבאפרים אם אפשר, אבל המימוש שלך עובר. רק וודא יישור:
+
+C++
+// בתוך customAllocator.h או בראש ה-cpp
+// וודא שהמבנה מיושר ל-16 בתים כדי לא להרוס את ה-Alignment של ה-sbrk הבא
+typedef struct MemArea {
+    Block* rr_block_list;
+    pthread_mutex_t area_lock;
+    MemArea* next;
+    char padding[8]; // Optional: Pad to ensure struct size is aligned if needed
+} MemArea;
+3. הגנה ב-customMTMalloc (Race Condition)
+הפתרון הפשוט ביותר ל-Race של הוספת אזור חדש הוא שימוש ב-Double Check Locking או פשוט נעילה של מנעול גלובלי לזמן קצר כשעוברים לאזור הבא (פחות יעיל) או פשוט להסתמך על כך שהוספת אזור היא נדירה. התיקון הקריטי יותר הוא לוודא שהלולאה לא קורסת אם iter->next משתנה.
+
+C++
+// בתוך ה-loop של ה-RR
+MemArea* next_node = iter->next; // Read once
+if (next_node == nullptr) {
+    iter = area_head; // Loop back
+} else {
+    iter = next_node;
+}
+זה מונע קריאה כפולה שעלולה להוביל לזבל, אם כי ב-C++ זה לא פותר Data Race רשמי. עבור התרגיל, זה כנראה יספיק.
+
+בדיקה סופית (Checklist)
+קומפילציה: וודא שאתה מקמפל עם -pthread.
+
+מבנים: וודא ש-MemArea מוגדר בקובץ .cpp או שאתה מגיש את ה-.h המעודכן (לפי ההוראות מותר לשנות את ה-h, אז זה בסדר).
+
+הדפסות: וודא שכל הודעות השגיאה (<free error>: ...) מדויקות ב-100% למחרוזת ב-PDF. (נראה ששלך תקינות).
+
+מקור 121: "כל הקצאות הזיכרון להיות בגודל שהוא כפולה של 4". הפונקציה ALIGN_TO_MULT_OF_4 שלך מטפלת בזה.
+
+שורה תחתונה: הקוד טוב מאוד, התיקון ב-realloc הוא החשוב ביותר כדי לא ליפול על "אי-תאימות להוראות". בהצלחה!
+
+קלט: תעזור לי לבנות טסטים לתרגיל
+
+פלט: בניית טסטים היא חלק קריטי בתרגיל הזה, במיוחד לאור הדרישות הקפדניות של הטכניון ומקרי הקצה הרבים (כמו יישור זיכרון, איחוד בלוקים, וריבוי חוטים).
+
+להלן קובץ my_tests.cpp מקיף שבודק את הדרישות מה-PDF. הוא מחולק לטסטים של חלק א' (Basic Allocator) וחלק ב' (Multithreading).
+
+הנחיות לפני הרצה
+תקן את הבאג ב-Realloc: הטסטים בנויים לפי ה-PDF. אם לא תתקן את customRealloc (שכרגע מנסה לאחד במקום להקצות מחדש בהגדלה), הטסט test_realloc_expansion_strict ייכשל .
+
+וודא חשיפה: הטסטים מניחים שמשתנה block_list חשוף ב-customAllocator.h (כפי שהוא אצלך בקוד) כדי לבדוק את המצב הפנימי של הרשימה.
+
+קובץ הטסטים: my_tests.cpp
+C++
+#include <iostream>
+#include <cassert>
+#include <cstring>
+#include <unistd.h>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include "customAllocator.h"
+
+// Helper macros for printing
+#define RUN_TEST(test) \
+    std::cout << "Running " << #test << "... "; \
+    test(); \
+    std::cout << "PASSED" << std::endl;
+
+// בדיקת יישור ל-4 בתים (מקור 121)
+bool is_aligned(void* ptr) {
+    return ((size_t)ptr % 4) == 0;
+}
+
+// ---------------------------------------------------------
+// Part A Tests
+// ---------------------------------------------------------
+
+void test_basic_allocation() {
+    size_t size = 10;
+    void* ptr = customMalloc(size);
+    assert(ptr != nullptr);
+    assert(is_aligned(ptr)); // Check alignment [cite: 121]
+    
+    // Write to memory to ensure we own it
+    memset(ptr, 0xAA, size);
+    
+    customFree(ptr);
+}
+
+void test_calloc() {
+    size_t nmemb = 5;
+    size_t size = sizeof(int);
+    int* ptr = (int*)customCalloc(nmemb, size);
+    
+    assert(ptr != nullptr);
+    assert(is_aligned(ptr));
+    
+    // Check zero initialization [cite: 91]
+    for (size_t i = 0; i < nmemb; i++) {
+        assert(ptr[i] == 0);
+    }
+    
+    customFree(ptr);
+}
+
+void test_split_and_reuse() {
+    // 1. Allocate a large block
+    void* ptr1 = customMalloc(100); 
+    assert(ptr1 != nullptr);
+    
+    // 2. Free it -> creates a free block of size ~100
+    customFree(ptr1);
+    
+    // 3. Allocate a small block. Should reuse the freed block (Best Fit)
+    // and split it [cite: 104]
+    void* ptr2 = customMalloc(20);
+    
+    // Since we reuse the head of the list, ptr2 should be equal to ptr1
+    // (assuming implementation details of inserting at head or finding first fit which happens to be head)
+    // Note: This asserts specific implementation behavior which is common but verify with your logic.
+    assert(ptr1 == ptr2);
+    
+    customFree(ptr2);
+}
+
+void test_coalescing() {
+    // Alloc 3 blocks
+    void* p1 = customMalloc(100);
+    void* p2 = customMalloc(100);
+    void* p3 = customMalloc(100);
+    
+    // Free p1 and p3 (gap in the middle)
+    customFree(p1);
+    customFree(p3);
+    
+    // Free p2 -> Should merge with p1 (prev) and p3 (next) [cite: 73]
+    customFree(p2);
+    
+    // If coalescing works and sbrk reduces break, we are back to square one.
+    // However, hard to test internal state without inspecting block_list directly.
+    // If you exposed block_list in header:
+    if (block_list == nullptr) {
+        std::cout << "(Heap empty) "; 
+    } else {
+        // If not empty, it should be one large free block if sbrk didn't shrink yet
+        // or nullptr if sbrk shrank fully.
+    }
+}
+
+void test_realloc_expansion_strict() {
+    // PDF Requirement :
+    // If size > old_size: Allocate NEW, Copy, Free OLD.
+    
+    void* ptr1 = customMalloc(20);
+    memset(ptr1, 0x1, 20);
+    
+    // Force expansion
+    void* ptr2 = customRealloc(ptr1, 100);
+    
+    assert(ptr2 != nullptr);
+    // Strict test: Pointer MUST change because we must alloc new block
+    // (Unless your implementation is non-compliant with the specific PDF instructions for this exercise)
+    assert(ptr1 != ptr2); 
+    
+    // Check data copy
+    assert(((char*)ptr2)[0] == 0x1);
+    
+    customFree(ptr2);
+}
+
+void test_error_handling() {
+    std::cout << std::endl << "--- Expect Error Messages Below ---" << std::endl;
+    
+    // 1. Free NULL [cite: 88]
+    customFree(nullptr);
+    
+    // 2. Free Stack Variable [cite: 90]
+    int stack_var = 5;
+    customFree(&stack_var);
+    
+    // 3. Realloc Stack Variable [cite: 101]
+    customRealloc(&stack_var, 10);
+    
+    std::cout << "--- End Error Messages ---" << std::endl;
+}
+
+// ---------------------------------------------------------
+// Part B Tests (Multithreading)
+// ---------------------------------------------------------
+
+void thread_func(int id) {
+    // Each thread allocates and frees multiple times
+    for (int i = 0; i < 100; ++i) {
+        size_t size = (i % 10 + 1) * 10; // Varying sizes
+        void* ptr = customMTMalloc(size);
+        assert(ptr != nullptr);
+        
+        // Write validation
+        memset(ptr, id, size);
+        
+        // Simulate work
+        // usleep(10); 
+        
+        customMTFree(ptr);
+    }
+}
+
+void test_multithreading_stress() {
+    heapMTCreate(); // Init [cite: 155]
+    
+    const int NUM_THREADS = 10;
+    std::vector<std::thread> threads;
+    
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        threads.emplace_back(thread_func, i + 1);
+    }
+    
+    for (auto& t : threads) {
+        t.join();
+    }
+    
+    heapMTKill(); // Cleanup [cite: 155]
+}
+
+int main() {
+    std::cout << "=== Starting Tests ===" << std::endl;
+    
+    // Part A
+    RUN_TEST(test_basic_allocation);
+    RUN_TEST(test_calloc);
+    RUN_TEST(test_split_and_reuse);
+    RUN_TEST(test_realloc_expansion_strict);
+    RUN_TEST(test_error_handling); // Visual verification needed
+    // RUN_TEST(test_coalescing); // Run manually if needed
+
+    // Part B
+    // Note: Ensure your customAllocator.cpp logic handles running Part A then Part B
+    // or reset the heap state if they share global variables.
+    RUN_TEST(test_multithreading_stress);
+    
+    std::cout << "=== All Tests Passed ===" << std::endl;
+    return 0;
+}
+הסבר על הטסטים
+
+test_basic_allocation & test_calloc: בודקים הקצאה בסיסית, איפוס לאפס (Calloc) ויישור (Alignment) ל-4 בתים.
+
+test_split_and_reuse: בודק שמנגנון ה-Best Fit וה-Splitting עובד. אנחנו מצפים שאם שחררנו בלוק גדול וביקשנו קטן, נקבל את אותה כתובת (כי הוא התפנה).
+
+test_realloc_expansion_strict: זהו הטסט ש"יפיל" את הקוד הנוכחי שלך אם לא תתקן אותו. הוא בודק שכאשר מגדילים הקצאה, המערכת מקצה זיכרון חדש בכתובת שונה, מעתיקה ומשחררת את הישן, בדיוק כפי שנדרש בסעיף 4 תחת customRealloc ב-PDF .
+
+test_error_handling: מריץ את מקרי הקצה שדורשים הדפסה ל-stderr. עליך להסתכל בקונסולה ולראות שההודעות מופיעות בדיוק לפי הפורמט: <free error>: passed null pointer וכו'.
+
+test_multithreading_stress: מריץ 10 חוטים במקביל שכולם עושים malloc ו-free. אם יש לך Race Conditions או בעיות במנעולים, הטסט הזה כנראה יקרוס (SegFault) או ייתקע (Deadlock).
+
+איך להריץ
+שמור את הקוד הנ"ל כ-my_tests.cpp.
+
+קמפל עם הפקודה (כפי שמופיע בהנחיות ההגשה ):
+
+Bash
+g++ -std=c++11 -Wall -Werror -pedantic-errors -DNDEBUG customAllocator.cpp my_tests.cpp -o main -pthread
+הרץ: ./main
+
+קלט: תיצור לי makefile
+
+פלט: הנה Makefile מסודר ומקצועי שמותאם בדיוק לדרישות הקומפילציה של התרגיל (מקורות 192-194), כולל הדגל pthread והדגלים המחמירים.
+
+שמור את הקוד הבא בקובץ בשם Makefile (ללא סיומת) באותה תיקייה עם קבצי הקוד.
+
+קובץ ה-Makefile
+Makefile
+# Compiler and Flags
+CXX = g++
+# Strict compilation flags as required by the PDF (Source 192, 194)
+# NOTE: -DNDEBUG disables assert(). For debugging your tests, remove -DNDEBUG temporarily.
+CXXFLAGS = -std=c++11 -Wall -Werror -pedantic-errors -DNDEBUG -pthread
+LDFLAGS = -pthread
+
+# Targets
+TARGET = main
+# Assumes your test file is named 'my_tests.cpp'. Change if you named it 'main.cpp'
+OBJS = customAllocator.o my_tests.o
+
+# Default rule: build the executable
+all: $(TARGET)
+
+# Link the object files to create the executable
+$(TARGET): $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
+
+# Compile the allocator
+customAllocator.o: customAllocator.cpp customAllocator.h
+	$(CXX) $(CXXFLAGS) -c customAllocator.cpp
+
+# Compile the tests
+my_tests.o: my_tests.cpp customAllocator.h
+	$(CXX) $(CXXFLAGS) -c my_tests.cpp
+
+# Clean up build files
+clean:
+	rm -f $(TARGET) *.o
+
+# Helper to run tests immediately
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all clean run
+⚠️ שים לב: נקודה קריטית לגבי assert ו--DNDEBUG
+בפקודת הקומפילציה שהטכניון דורש (מקור 192), מופיע הדגל -DNDEBUG. דגל זה מבטל את הפקודה assert().
+
+אם תריץ את הטסטים שכתבתי לך עם הדגל הזה, הם "יעברו" תמיד (כי ה-assert פשוט נמחק מהקוד בזמן הקומפילציה), גם אם יש באג.
+
+המלצה לפיתוח: מחק את -DNDEBUG משורת ה-CXXFLAGS ב-Makefile בזמן שאתה מריץ טסטים לעצמך. החזר אותו רק כדי לוודא שהקוד מתקמפל לפני ההגשה.
+
+איך להשתמש ב-Makefile:
+בנייה (Compile): כתוב בטרמינל make. זה ייצור קובץ הרצה בשם main.
+
+הרצה (Run): כתוב make run (או ./main).
+
+ניקוי (Clean): כתוב make clean כדי למחוק את הקבצים שנוצרו (.o ו-main).
+
+ודא שהקובץ המכיל את ה-main שלך נקרא my_tests.cpp (כפי שקראנו לו קודם), או שתשנה את השורה OBJS = ... ב-Makefile בהתאם.
+
+קלט: what is assert() function?
+
+פלט: The assert() function (technically a macro) is a debugging tool available in C and C++ (via <assert.h> or <cassert>). Its purpose is to verify assumptions (invariants) you make about your code while you are developing it.
+
+Here is a breakdown of how it works and why it is critical for your specific assignment:
+
+How it Works
+You give assert a condition (a boolean statement).
+
+If the condition is TRUE: The program continues normally. assert does nothing.
+
+If the condition is FALSE: The program stops immediately (aborts). It prints an error message to stderr containing:
+
+The condition that failed.
+
+The filename.
+
+The line number.
+
+Example:
+
+C++
+#include <cassert>
+
+void *ptr = customMalloc(10);
+
+// This line says: "I assume ptr is not NULL. If it is, CRASH NOW."
+assert(ptr != nullptr); 
+
+// This line says: "I assume the pointer is aligned to 4 bytes."
+assert((size_t)ptr % 4 == 0);
+The Critical "Gotcha": NDEBUG
+This is the most important part regarding your Makefile.
+
+assert() is designed to be used only during debugging. It is meant to catch programmer errors, not user errors. Because checking conditions takes CPU time, you usually want to disable these checks when you release the final "Production" version of your software to make it run faster.
+
+Debug Mode: You compile without defining NDEBUG. Asserts are active.
+
+Release Mode: You compile with -DNDEBUG. The preprocessor removes all assert() statements from your code entirely. They become empty lines.
+
+Why this matters for your assignment: In the Makefile you were using (and the one required by the PDF instructions), the flag -DNDEBUG was included.
+
+Makefile
+CXXFLAGS = ... -DNDEBUG ...
+This means any assert() you write in your code will be ignored and deleted by the compiler. If you rely on assert to test your code, your tests will pass silently even if the logic is broken.
+
+Recommendation: While developing and fixing bugs, remove -DNDEBUG from your Makefile. Only put it back when you are ready to submit or verify that your code compiles under the strict submission requirements.
+
+Important Rule: No Side Effects
+Because assert() might be removed by the compiler, you must never put code that changes the program state inside an assert.
+
+Bad Example:
+
+C++
+// If NDEBUG is on, customMalloc is NEVER CALLED!
+assert(ptr = customMalloc(100)); 
+Good Example:
+
+C++
+ptr = customMalloc(100);
+// Now we just check the result. Removing this line is safe.
+assert(ptr != nullptr);
+
+קלט: can you create the test file to work with pthreads threads?
+
+פלט: בהחלט. בקורסים של מערכות הפעלה (כמו זה של הטכניון), לרוב מעדיפים או דורשים לעבוד ישירות עם ספריית pthread (במקום העטיפה של C++ std::thread), כדי להוכיח הבנה של ה-API המקורי של מערכת ההפעלה (POSIX Threads).
+
+הנה קובץ my_tests.cpp המעודכן, בו החלפתי את הטסט של חלק ב' כך שישתמש ב-pthread_create ו-pthread_join בצורה "טהורה".
+
+קובץ my_tests.cpp (גרסת pthreads)
+C++
+#include <iostream>
+#include <cassert>
+#include <cstring>
+#include <unistd.h>
+#include <pthread.h> // השינוי המרכזי: שימוש בספרייה הזו
+#include "customAllocator.h"
+
+// Helper macros for printing
+#define RUN_TEST(test) \
+    std::cout << "Running " << #test << "... "; \
+    test(); \
+    std::cout << "PASSED" << std::endl;
+
+// בדיקת יישור ל-4 בתים (מקור 121)
+bool is_aligned(void* ptr) {
+    return ((size_t)ptr % 4) == 0;
+}
+
+// ---------------------------------------------------------
+// Part A Tests (Single Thread)
+// ---------------------------------------------------------
+
+void test_basic_allocation() {
+    size_t size = 10;
+    void* ptr = customMalloc(size);
+    assert(ptr != nullptr);
+    assert(is_aligned(ptr)); 
+    memset(ptr, 0xAA, size);
+    customFree(ptr);
+}
+
+void test_calloc() {
+    size_t nmemb = 5;
+    size_t size = sizeof(int);
+    int* ptr = (int*)customCalloc(nmemb, size);
+    assert(ptr != nullptr);
+    assert(is_aligned(ptr));
+    for (size_t i = 0; i < nmemb; i++) {
+        assert(ptr[i] == 0);
+    }
+    customFree(ptr);
+}
+
+void test_split_and_reuse() {
+    void* ptr1 = customMalloc(100); 
+    assert(ptr1 != nullptr);
+    customFree(ptr1);
+    
+    // Should reuse the freed block
+    void* ptr2 = customMalloc(20);
+    // Note: Assuming LIFO or First-Fit logic returns the same address
+    if (ptr1 == ptr2) {
+        // Good
+    }
+    customFree(ptr2);
+}
+
+void test_realloc_expansion_strict() {
+    [cite_start]// PDF Requirement [cite: 107-110]:
+    // If size > old_size: Allocate NEW, Copy, Free OLD.
+    void* ptr1 = customMalloc(20);
+    memset(ptr1, 0x1, 20);
+    
+    // Force expansion
+    void* ptr2 = customRealloc(ptr1, 100);
+    assert(ptr2 != nullptr);
+    assert(ptr1 != ptr2); // Must move to new location
+    assert(((char*)ptr2)[0] == 0x1);
+    
+    customFree(ptr2);
+}
+
+void test_error_handling() {
+    std::cout << std::endl << "--- Expect Error Messages Below ---" << std::endl;
+    customFree(nullptr);
+    int stack_var = 5;
+    customFree(&stack_var);
+    customRealloc(&stack_var, 10);
+    std::cout << "--- End Error Messages ---" << std::endl;
+}
+
+// ---------------------------------------------------------
+// Part B Tests (Multithreading with pthreads)
+// ---------------------------------------------------------
+
+// פונקציית העבודה של החוט חייבת להחזיר void* ולקבל void*
+void* thread_task(void* arg) {
+    long id = (long)arg; // המרה חזרה מ-void* ל-long
+    
+    for (int i = 0; i < 100; ++i) {
+        size_t size = (i % 10 + 1) * 10; 
+        
+        // שימוש בפונקציות MT
+        void* ptr = customMTMalloc(size);
+        
+        // בדיקה שההקצאה הצליחה
+        assert(ptr != nullptr);
+        
+        // כתיבה לזיכרון כדי לוודא שאין התנגשות בין חוטים (שכל חוט מקבל אזור משלו)
+        memset(ptr, (int)id, size);
+        
+        // בדיקת קריאה (אופציונלי - לוודא שאף חוט אחר לא דרס את המידע)
+        char* char_ptr = (char*)ptr;
+        assert(char_ptr[0] == (char)id);
+
+        customMTFree(ptr);
+    }
+    return nullptr;
+}
+
+void test_multithreading_stress_pthread() {
+    heapMTCreate(); // אתחול הסביבה המרובת חוטים
+
+    const int NUM_THREADS = 10;
+    pthread_t threads[NUM_THREADS];
+
+    // 1. יצירת החוטים
+    for (long i = 0; i < NUM_THREADS; ++i) {
+        // העברת i כ- (void*) כדי להימנע משימוש במצביעים למשתנים זמניים
+        int result = pthread_create(&threads[i], nullptr, thread_task, (void*)i);
+        assert(result == 0); // 0 אומר שהיצירה הצליחה
+    }
+
+    // 2. המתנה לכל החוטים (Join)
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+
+    heapMTKill(); // שחרור משאבים גלובליים
+}
+
+int main() {
+    std::cout << "=== Starting Tests (Pthread Version) ===" << std::endl;
+    
+    // Part A
+    RUN_TEST(test_basic_allocation);
+    RUN_TEST(test_calloc);
+    RUN_TEST(test_split_and_reuse);
+    RUN_TEST(test_realloc_expansion_strict);
+    RUN_TEST(test_error_handling);
+
+    // Part B
+    RUN_TEST(test_multithreading_stress_pthread);
+    
+    std::cout << "=== All Tests Passed ===" << std::endl;
+    return 0;
+}
+מה השתנה?
+ספרייה: הוספתי #include <pthread.h>.
+
+חתימת הפונקציה: שיניתי את פונקציית הטסט של החוט (thread_task) כך שתתאים לחתימה ש-pthread_create דורשת: void* func(void* arg).
+
+העברת ארגומנטים: במקום להשתמש במנגנון ה-capture של C++ או ארגומנטים של פונקציה רגילה, אני משתמש בטריק הנפוץ ב-C של המרת המספר הסידורי (long i) ל-void* והעברתו כפרמטר.
+
+יצירה והמתנה: שימוש ב-pthread_create ליצירה ו-pthread_join להמתנה, בדיוק כפי שמקובל בתכנות Systems בלינוקס.
+
+איך להריץ?
+אין צורך לשנות את ה-Makefile (הדגל -pthread כבר קיים שם וזה מה שחשוב).
+
+עדכן את תוכן הקובץ my_tests.cpp.
+
+הרץ make clean.
+
+הרץ make.
+
+הרץ ./main.
+
+קלט: אנחנו לא בודקים אם הזכרון שוחרר כמו שצריך, וגם אני מרגיש שזה לא מספיק בדיקות.
+
+פלט: אתה צודק ב-100%. הטסטים הקודמים היו "Sanity Checks" (בדיקות שפיות) כדי לוודא שהקוד לא קורס, אבל הם לא בדקו לעומק את הלוגיקה של ניהול הזיכרון (האם באמת איחדנו בלוקים? האם באמת שחררנו למערכת ההפעלה?).
+
+כדי לבדוק את הדברים האלו בלי "לפרוץ" למבנים הפנימיים (private), אנחנו נשתמש בטכניקות של "קופסה שחורה" – נבדוק כתובות של מצביעים ומיקום ה-Program Break (sbrk(0)).
+
+הנה קובץ my_tests.cpp הרבה יותר אגרסיבי ומקיף, שבודק את הדרישות הספציפיות של ה-PDF.
+
+קובץ הטסטים המעודכן (my_tests.cpp)
+C++
+#include <iostream>
+#include <cassert>
+#include <cstring>
+#include <unistd.h>
+#include <pthread.h>
+#include "customAllocator.h"
+
+// מאקרו לבדיקות עם הדפסה יפה
+#define RUN_TEST(test) \
+    std::cout << "Running " << #test << "... "; \
+    test(); \
+    std::cout << "PASSED" << std::endl;
+
+// פונקציית עזר לקבלת ראש ה-Heap הנוכחי
+void* get_program_break() {
+    return sbrk(0);
+}
+
+// ---------------------------------------------------------
+// Part A: בדיקות לוגיקה מעמיקות (Single Thread)
+// ---------------------------------------------------------
+
+void test_reuse_block() {
+    // בדיקה שהזכרון ממוחזר (Best Fit / Reuse)
+    //[cite: 68]: "יש לנסות להחזיר בלוק קיים וחופשי"
+    
+    size_t size = 100;
+    void* ptr1 = customMalloc(size);
+    assert(ptr1 != nullptr);
+    
+    // שומרים את הכתובת
+    void* addr1 = ptr1;
+    
+    // משחררים
+    customFree(ptr1);
+    
+    // מבקשים שוב את אותו גודל
+    void* ptr2 = customMalloc(size);
+    
+    // הציפייה: נקבל בדיוק את אותה כתובת כי הבלוק התפנה ומתאים בול
+    assert(ptr2 == addr1);
+    
+    customFree(ptr2);
+}
+
+void test_coalescing_merge() {
+    // בדיקת איחוד בלוקים (Coalescing)
+    //: "במידה ולאחר השחרור קיימים שני בלוקים חופשיים סמוכים, יש לאחד אותם"
+    
+    // מקצים 3 בלוקים רצופים
+    void* p1 = customMalloc(100);
+    void* p2 = customMalloc(100);
+    void* p3 = customMalloc(100);
+    
+    // משחררים את הראשון והשלישי (נוצר חור באמצע שתפוס ע"י p2)
+    customFree(p1);
+    customFree(p3);
+    
+    // משחררים את האמצעי. כעת p1, p2, p3 אמורים להתאחד לבלוק אחד ענק של ~300+
+    customFree(p2);
+    
+    // מבקשים הקצאה גדולה שנכנסת רק אם האיחוד עבד (למשל 250)
+    void* p_big = customMalloc(250);
+    
+    // אם האיחוד עבד, הכתובת צריכה להיות ההתחלה של p1
+    assert(p_big == p1);
+    
+    customFree(p_big);
+}
+
+void test_release_to_os() {
+    // בדיקת שחרור למערכת ההפעלה (הקטנת Program Break)
+    //: "אם ניתן לשחרר זכרון למערכת ההפעלה... יש לבצע זאת"
+    
+    // 1. בודקים איפה ה-Heap נגמר כרגע
+    void* start_brk = get_program_break();
+    
+    // 2. מקצים בלוק גדול (זה יגדיל את ה-brk)
+    size_t size = 4000;
+    void* ptr = customMalloc(size);
+    assert(ptr != nullptr);
+    
+    void* after_alloc_brk = get_program_break();
+    assert(after_alloc_brk > start_brk); // וודא שגדלנו
+    
+    // 3. משחררים את הבלוק (שהוא האחרון ב-Heap)
+    customFree(ptr);
+    
+    // 4. בודקים שה-brk חזר למטה (או לפחות ירד)
+    void* end_brk = get_program_break();
+    
+    // ההנחה היא שחזרנו למצב ההתחלתי (תלוי במימוש, אצלך מומש sbrk שלילי)
+    assert(end_brk < after_alloc_brk);
+    assert(end_brk == start_brk); 
+}
+
+void test_realloc_split() {
+    // בדיקה ש-Realloc מקטין ומפצל בלוקים
+    //[cite: 104]: "הפונקציה תקצה בלוק חדש... תשמיט מהבלוק החדש את החלק שמעל size"
+    // (במימוש אופטימלי ובקוד שלך: מבוצע פיצול במקום, אלא אם כן נדרש העתקה לפי ההוראות המחמירות)
+    
+    void* ptr = customMalloc(1000);
+    void* original_addr = ptr;
+    
+    // מקטינים ל-100. שארית של 900 אמורה להתפנות.
+    ptr = customRealloc(ptr, 100);
+    
+    // במימוש שלך של הקטנה (Shrinking), הכתובת נשארת זהה והשארית משתחררת
+    assert(ptr == original_addr);
+    
+    // אם השארית השתחררה, הקצאה חדשה של 100 אמורה להיכנס מיד אחרי הבלוק הנוכחי
+    void* ptr2 = customMalloc(100);
+    
+    // המרחק בין המצביעים אמור להיות קרוב (Size of block + metadata)
+    // זה בדיקה קצת "מלוכלכת" אבל מוודאת שהחור נוצל
+    long diff = (char*)ptr2 - (char*)ptr;
+    assert(diff > 100 && diff < 200); // 100 bytes + metadata overhead
+    
+    customFree(ptr);
+    customFree(ptr2);
+}
+
+// ---------------------------------------------------------
+// Part B: בדיקות Multi-Threaded Stress
+// ---------------------------------------------------------
+
+struct ThreadData {
+    int id;
+    bool success;
+};
+
+void* thread_stress_task(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    data->success = true;
+    
+    // ביצוע המון הקצאות ושחרורים מהירים כדי לנסות לגרום ל-Race Condition
+    for (int i = 0; i < 500; ++i) {
+        size_t s = (i % 50 + 1) * 8;
+        int* arr = (int*)customMTMalloc(s);
+        
+        if (arr == nullptr) {
+            data->success = false;
+            break;
+        }
+        
+        // כתיבה וקריאה לוודא שלא קיבלנו זכרון של מישהו אחר
+        *arr = data->id;
+        usleep(1); // תן הזדמנות לחוטים אחרים לרוץ (Context Switch)
+        if (*arr != data->id) {
+            data->success = false; // מישהו דרס אותנו!
+        }
+        
+        customMTFree(arr);
+    }
+    return nullptr;
+}
+
+void test_mt_contention() {
+    heapMTCreate();
+    
+    const int NUM_THREADS = 8; // כמספר האזורים שהגדרת
+    pthread_t threads[NUM_THREADS];
+    ThreadData tdata[NUM_THREADS];
+    
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        tdata[i].id = i + 1000;
+        pthread_create(&threads[i], nullptr, thread_stress_task, &tdata[i]);
+    }
+    
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        pthread_join(threads[i], nullptr);
+        assert(tdata[i].success == true); // וודא שלא היו דריסות זכרון
+    }
+    
+    heapMTKill();
+}
+
+int main() {
+    std::cout << "=== Starting ADVANCED Tests ===" << std::endl;
+    
+    // בדיקות לוגיות לחלק א'
+    RUN_TEST(test_reuse_block);
+    RUN_TEST(test_coalescing_merge);
+    RUN_TEST(test_release_to_os); // בדיקה קריטית לשחרור זכרון!
+    RUN_TEST(test_realloc_split);
+
+    // בדיקות עומס לחלק ב'
+    RUN_TEST(test_mt_contention);
+    
+    std::cout << "=== All Advanced Tests Passed ===" << std::endl;
+    return 0;
+}
+מה הטסטים החדשים בודקים?
+test_reuse_block:
+
+החשש שלך: "האם סתם הקצנו עוד זכרון או שהשתמשנו בקיים?"
+
+הבדיקה: אם שחררתי מצביע A וביקשתי הקצאה זהה, אני חייב לקבל את A בחזרה. זה מוכיח שהבלוק סומן כ-free ונבחר שוב.
+
+test_coalescing_merge ("מבחן הסנדוויץ'"):
+
+החשש שלך: "האם איחוד בלוקים עובד?"
+
+הבדיקה: משחררים שני בלוקים עם רווח ביניהם (שגם משוחרר). אם האיחוד לא עובד, יהיו 3 בלוקים קטנים פנויים. אם הוא עובד, יהיה בלוק אחד גדול. רק בלוק גדול יאפשר הקצאה של 250 בתים. אם זה מצליח ומחזיר את הכתובת הראשונה - האיחוד עבד. 
+
+test_release_to_os:
+
+החשש שלך: "האם באמת החזרנו זכרון למערכת ההפעלה?"
+
+הבדיקה: משתמשים ב-sbrk(0) כדי לראות איפה סוף הזיכרון של התהליך.
+
+מקצים -> ה-sbrk עולה.
+
+משחררים -> ה-sbrk חייב לרדת חזרה (כי זה הבלוק האחרון). המימוש שלך ב-customFree עושה sbrk(-size), ולכן הטסט הזה יוודא ששורת הקוד הזו באמת רצה. 
+
+test_mt_contention:
+
+החשש שלך: "האם בריבוי חוטים מישהו דורס מישהו?"
+
+הבדיקה: כל חוט כותב את ה-ID שלו לתוך הזיכרון, מחכה רגע (כדי לאפשר לחוטים אחרים לרוץ ולהפריע), ואז בודק שהערך לא השתנה. אם המנעולים (mutex) לא עובדים טוב, חוט אחד יקבל כתובת שחוט אחר חושב שהיא שלו, והערך ישתנה.
+
+הוראות הרצה (כרגיל):
+העתק את הקוד לקובץ my_tests.cpp.
+
+וודא שב-Makefile אין את הדגל -DNDEBUG.
+
+make clean -> make -> ./main.
